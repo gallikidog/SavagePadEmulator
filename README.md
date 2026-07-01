@@ -1,31 +1,20 @@
-# SavagePadEmu v0.2.1
+# SavagePadEmu v0.3.0
 
-Emulador de joystick Xbox 360 virtual para Windows 11 usando ViGEmBus, SharpDX.DirectInput y WinForms.
+Emulador de joystick Xbox 360 virtual para Windows 11, basado en ViGEmBus y DirectInput.
 
-## Cambios de esta revisión
+## v0.3.0 — Arquitectura y rendimiento
 
-- Corregido el warning `CS1998` del método de inicio de emulación.
-- Optimizado el loop de polling para menor input lag:
-  - hilo de emulación con prioridad `AboveNormal`;
-  - salida más rápida al detener usando `CancellationToken.WaitHandle`;
-  - modo de `1 ms` con `Thread.Yield()` para evitar sleeps largos.
-- Corregido el handler de `Invertir` para evitar eventos duplicados al refrescar la interfaz.
-- Se mantiene la interfaz con idioma Español / English, mapeo visual, calibración, perfiles JSON y Test / Drift.
-
-## Funciones principales
-
-- Interfaz ordenada estilo x360ce.
-- Mapeo visual con etiquetas Xbox / PlayStation.
-- Botón `Bind / Set key` por cada entrada virtual.
-- Panel `Test / Drift` para probar botones, gatillos y sticks.
-- Deadzone independiente para stick izquierdo y derecho.
-- Deadzone para gatillos L2/R2.
-- Anti-deadzone y sensibilidad de sticks.
-- Umbral configurable para aviso de drift.
-- Perfiles JSON con mapeo + calibración.
-- Guardado rápido en `profile.json` y guardado manual con `Guardar como...`.
-- Compatibilidad con dispositivos DirectInput `Gamepad` y `Joystick`.
-- Polling configurable desde `1 ms` hasta `16 ms`.
+- Código dividido en módulos:
+  - `Models/ConfigurationModels.cs`: perfiles, bindings, calibración y catálogo de controles.
+  - `Input/InputSnapshot.cs`: lectura y procesamiento eficiente de DirectInput.
+  - `Services/ProfileRepository.cs`: guardado/carga JSON atómico.
+  - `UI/TestPadView.cs`: vista visual de Test / Drift.
+- Eliminadas las asignaciones de arreglos de ejes repetidas dentro del loop de emulación.
+- El loop omite reportes ViGEm cuando el estado físico y la configuración no cambiaron.
+- Los cambios de mapeo/calibración usan una revisión interna para aplicarse inmediatamente.
+- La calibración se intercambia como un snapshot completo, evitando estados parcialmente actualizados entre UI y loop de polling.
+- El panel Test / Drift libera el joystick mientras la emulación está activa, evitando competencia por DirectInput.
+- Guardado de perfiles/configuración más seguro: se escribe temporalmente y luego se reemplaza el archivo.
 
 ## Requisitos
 
@@ -46,18 +35,15 @@ El ejecutable queda en:
 bin\Release\net8.0-windows\win-x64\publish\SavagePadEmu.exe
 ```
 
-## Uso recomendado
+## Uso
 
-1. Abrí SavagePadEmu.
-2. Seleccioná tu joystick físico.
-3. Entrá en `Mapeo` y configurá cada botón con `Bind / Set key`.
-4. Entrá en `Test / Drift` para confirmar que botones, sticks y gatillos responden bien.
-5. Entrá en `Calibración / Perfiles` y ajustá deadzones si tenés drift.
-6. Guardá el perfil.
-7. Iniciá emulación.
+1. Seleccioná el joystick físico.
+2. Configurá los binds y guardá el perfil.
+3. Probá sticks/botones en **Test / Drift** antes de iniciar emulación.
+4. Ajustá deadzones y polling en **Calibración / Perfiles**.
+5. Iniciá emulación.
 
-## Notas de input lag
+## Nota de rendimiento
 
-- `Polling interval = 1 ms` busca la menor latencia posible.
-- Si notás mucho consumo de CPU, probá `2 ms` o `4 ms`.
-- El software evita actualizar la UI dentro del loop principal para reducir overhead.
+- **1 ms** prioriza respuesta y puede usar más CPU según el dispositivo/driver.
+- **2–4 ms** suele ser un buen equilibrio entre consumo y latencia.
