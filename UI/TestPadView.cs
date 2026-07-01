@@ -13,7 +13,7 @@ public sealed class TestPadView : UserControl
     public TestPadView()
     {
         DoubleBuffered = true;
-        BackColor = Color.FromArgb(245, 245, 245);
+        BackColor = ModernTheme.Surface;
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -21,13 +21,13 @@ public sealed class TestPadView : UserControl
         base.OnPaint(e);
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        using var text = new SolidBrush(Color.Black);
-        using var body = new SolidBrush(Color.FromArgb(232, 236, 244));
-        using var outline = new Pen(Color.FromArgb(70, 70, 70), 2);
-        using var on = new SolidBrush(Color.FromArgb(30, 140, 60));
-        using var off = new SolidBrush(Color.White);
-        using var axisPen = new Pen(Color.FromArgb(60, 60, 60), 2);
-        using var driftPen = new Pen(Color.FromArgb(180, 80, 20), 1);
+        using var text = new SolidBrush(ModernTheme.Text);
+        using var body = new SolidBrush(Color.FromArgb(235, 241, 250));
+        using var outline = new Pen(Color.FromArgb(148, 163, 184), 2);
+        using var on = new SolidBrush(ModernTheme.Accent);
+        using var off = new SolidBrush(Color.FromArgb(248, 250, 252));
+        using var axisPen = new Pen(Color.FromArgb(100, 116, 139), 2);
+        using var driftPen = new Pen(Color.FromArgb(245, 158, 11), 1);
 
         var width = ClientSize.Width;
         var height = ClientSize.Height;
@@ -59,7 +59,7 @@ public sealed class TestPadView : UserControl
         g.DrawLine(axisPen, centerX, centerY - radius, centerX, centerY + radius);
         var pointX = centerX + (int)(x * radius);
         var pointY = centerY - (int)(y * radius);
-        using var knob = new SolidBrush(Color.FromArgb(70, 120, 210));
+        using var knob = new SolidBrush(ModernTheme.Accent);
         g.FillEllipse(knob, pointX - 11, pointY - 11, 22, 22);
         g.DrawEllipse(Pens.Black, pointX - 11, pointY - 11, 22, 22);
         g.DrawString(label, Font, text, centerX - 40, centerY + radius + 8);

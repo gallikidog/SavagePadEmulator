@@ -1,20 +1,17 @@
-# SavagePadEmu v0.3.0
+# SavagePadEmu v0.4.0
 
 Emulador de joystick Xbox 360 virtual para Windows 11, basado en ViGEmBus y DirectInput.
 
-## v0.3.0 — Arquitectura y rendimiento
+## v0.4.0 — Interfaz moderna
 
-- Código dividido en módulos:
-  - `Models/ConfigurationModels.cs`: perfiles, bindings, calibración y catálogo de controles.
-  - `Input/InputSnapshot.cs`: lectura y procesamiento eficiente de DirectInput.
-  - `Services/ProfileRepository.cs`: guardado/carga JSON atómico.
-  - `UI/TestPadView.cs`: vista visual de Test / Drift.
-- Eliminadas las asignaciones de arreglos de ejes repetidas dentro del loop de emulación.
-- El loop omite reportes ViGEm cuando el estado físico y la configuración no cambiaron.
-- Los cambios de mapeo/calibración usan una revisión interna para aplicarse inmediatamente.
-- La calibración se intercambia como un snapshot completo, evitando estados parcialmente actualizados entre UI y loop de polling.
-- El panel Test / Drift libera el joystick mientras la emulación está activa, evitando competencia por DirectInput.
-- Guardado de perfiles/configuración más seguro: se escribe temporalmente y luego se reemplaza el archivo.
+- Interfaz renovada con estilo visual moderno y consistente.
+- Encabezado de aplicación con identidad SavagePad y controles ordenados.
+- Pestañas personalizadas para **Mapeo**, **Test / Drift** y **Calibración / Perfiles**.
+- Botones primarios, secundarios y de detener con estados visuales claros.
+- Filas de mapeo más legibles: control virtual, entrada asignada, Bind, invertir y limpiar.
+- Paneles de calibración y diagnóstico organizados como tarjetas.
+- Test Pad con paleta visual más clara y botones activos resaltados.
+- No cambia el motor de emulación ni la lógica de perfiles de v0.3.0.
 
 ## Requisitos
 
@@ -42,8 +39,3 @@ bin\Release\net8.0-windows\win-x64\publish\SavagePadEmu.exe
 3. Probá sticks/botones en **Test / Drift** antes de iniciar emulación.
 4. Ajustá deadzones y polling en **Calibración / Perfiles**.
 5. Iniciá emulación.
-
-## Nota de rendimiento
-
-- **1 ms** prioriza respuesta y puede usar más CPU según el dispositivo/driver.
-- **2–4 ms** suele ser un buen equilibrio entre consumo y latencia.

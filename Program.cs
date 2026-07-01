@@ -42,14 +42,14 @@ public sealed class MainForm : Form
     private readonly Label _languageLabel = new() { AutoSize = true, Padding = new Padding(16, 7, 8, 0) };
     private readonly Label _help = new() { Dock = DockStyle.Top, Height = 42, Padding = new Padding(12, 8, 12, 4) };
     private string _lang = "es";
-    private readonly TextBox _log = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Bottom, Height = 120 };
-    private readonly TableLayoutPanel _mapper = new() { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(12), ColumnCount = 5 };
-    private readonly TabControl _tabs = new() { Dock = DockStyle.Fill };
-    private readonly TabPage _mapTab = new() { Text = "Mapeo" };
-    private readonly TabPage _testTab = new() { Text = "Test / Drift" };
-    private readonly TabPage _calibrationTab = new() { Text = "Calibración" };
-    private readonly TestPadView _testView = new() { Dock = DockStyle.Fill };
-    private readonly TableLayoutPanel _testValues = new() { Dock = DockStyle.Right, Width = 330, Padding = new Padding(12), ColumnCount = 2, AutoScroll = true };
+    private readonly TextBox _log = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Bottom, Height = 108, BorderStyle = BorderStyle.FixedSingle, BackColor = ModernTheme.Surface, ForeColor = ModernTheme.Text, Font = new Font("Consolas", 8.5F) };
+    private readonly TableLayoutPanel _mapper = new() { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(16), ColumnCount = 5, BackColor = ModernTheme.Surface };
+    private readonly ModernTabControl _tabs = new() { Dock = DockStyle.Fill, BackColor = ModernTheme.AppBackground };
+    private readonly TabPage _mapTab = new() { Text = "Mapeo", BackColor = ModernTheme.Surface };
+    private readonly TabPage _testTab = new() { Text = "Test / Drift", BackColor = ModernTheme.AppBackground };
+    private readonly TabPage _calibrationTab = new() { Text = "Calibración", BackColor = ModernTheme.AppBackground };
+    private readonly TestPadView _testView = new() { Dock = DockStyle.Fill, BackColor = ModernTheme.Surface };
+    private readonly TableLayoutPanel _testValues = new() { Dock = DockStyle.Right, Width = 340, Padding = new Padding(14), ColumnCount = 2, AutoScroll = true, BackColor = ModernTheme.Surface };
     private readonly Dictionary<string, Label> _testValueLabels = new();
     private readonly System.Windows.Forms.Timer _testTimer = new() { Interval = 25 };
     private DirectInput? _testDirectInput;
@@ -100,13 +100,42 @@ public sealed class MainForm : Form
     public MainForm()
     {
         Text = "SavagePadEmu - Visual Mapper estilo x360ce";
-        Width = 980;
-        Height = 720;
-        MinimumSize = new System.Drawing.Size(900, 620);
+        Width = 1040;
+        Height = 760;
+        MinimumSize = new System.Drawing.Size(940, 650);
         Font = new Font("Segoe UI", 9F);
-        BackColor = Color.FromArgb(248, 249, 252);
+        BackColor = ModernTheme.AppBackground;
 
-        var top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 92, Padding = new Padding(12), AutoSize = false };
+        var header = new ModernCard { Dock = DockStyle.Top, Height = 116, Padding = new Padding(16, 12, 16, 8) };
+        var brand = new Label
+        {
+            Text = "SAVAGEPAD",
+            Location = new Point(16, 10),
+            AutoSize = true,
+            Font = new Font("Segoe UI Semibold", 16F),
+            ForeColor = ModernTheme.Text
+        };
+        var subtitle = new Label
+        {
+            Text = "XInput emulator • DirectInput mapper",
+            Location = new Point(154, 17),
+            AutoSize = true,
+            Font = new Font("Segoe UI", 9F),
+            ForeColor = ModernTheme.MutedText
+        };
+        var top = new FlowLayoutPanel
+        {
+            Location = new Point(12, 42),
+            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            Width = 980,
+            Height = 66,
+            Padding = new Padding(0),
+            AutoSize = false,
+            BackColor = Color.Transparent
+        };
+        header.Controls.Add(brand);
+        header.Controls.Add(subtitle);
+        header.Controls.Add(top);
         top.Controls.Add(_deviceLabel);
         top.Controls.Add(_devices);
         top.Controls.Add(_refresh);
@@ -136,7 +165,9 @@ public sealed class MainForm : Form
         Controls.Add(_tabs);
         Controls.Add(_log);
         Controls.Add(_help);
-        Controls.Add(top);
+        Controls.Add(header);
+
+        ApplyModernChrome();
 
         LoadSettings();
         ApplyLanguage();
@@ -162,6 +193,23 @@ public sealed class MainForm : Form
         FormClosing += (_, _) => { _isClosing = true; _testTimer.Stop(); ResetTestJoystick(); StopEmulation(); };
     }
 
+
+    private void ApplyModernChrome()
+    {
+        ModernTheme.StyleInput(_devices);
+        ModernTheme.StyleInput(_language);
+        ModernTheme.StylePrimaryButton(_start);
+        ModernTheme.StyleDangerButton(_stop);
+        foreach (var button in new[] { _refresh, _save, _load, _defaults, _clearAll, _saveAs, _openProfileFolder })
+            ModernTheme.StyleSecondaryButton(button);
+
+        _help.BackColor = ModernTheme.AppBackground;
+        _help.ForeColor = ModernTheme.MutedText;
+        _status.ForeColor = ModernTheme.Success;
+        _status.Font = new Font("Segoe UI Semibold", 9F);
+        _deviceLabel.ForeColor = ModernTheme.Text;
+        _languageLabel.ForeColor = ModernTheme.Text;
+    }
 
     private string T(string key) => (_lang == "en" ? key switch
     {
@@ -377,13 +425,19 @@ public sealed class MainForm : Form
     {
         _calibrationTab.Controls.Clear();
         _calibrationHelp.Text = T("calibrationHelp");
-        var panel = new TableLayoutPanel
+        var card = new ModernCard
         {
             Dock = DockStyle.Top,
             Padding = new Padding(18),
+            Height = 330,
+            Margin = new Padding(16)
+        };
+        var panel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
             ColumnCount = 3,
             RowCount = 8,
-            Height = 310
+            BackColor = ModernTheme.Surface
         };
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 260));
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
@@ -396,18 +450,21 @@ public sealed class MainForm : Form
         AddCalibrationRow(panel, 5, T("driftWarningValue"), _driftWarning, T("hintDrift"));
         AddCalibrationRow(panel, 6, T("pollInterval"), _pollInterval, T("hintPoll"));
         var apply = new Button { Text = _lang == "en" ? "Apply" : "Aplicar", Width = 120, Height = 32 };
+        ModernTheme.StylePrimaryButton(apply);
         apply.Click += (_, _) => { ApplyCalibrationFromUi(); SaveProfile(); Log(T("settingsApplied")); };
         panel.Controls.Add(apply, 1, 7);
-        _calibrationTab.Controls.Add(panel);
+        card.Controls.Add(panel);
+        _calibrationTab.Controls.Add(card);
         _calibrationTab.Controls.Add(_calibrationHelp);
     }
 
     private static void AddCalibrationRow(TableLayoutPanel panel, int row, string label, NumericUpDown control, string hint)
     {
         panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        panel.Controls.Add(new Label { Text = label, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, row);
+        panel.Controls.Add(new Label { Text = label, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = ModernTheme.Text }, 0, row);
+        ModernTheme.StyleInput(control);
         panel.Controls.Add(control, 1, row);
-        panel.Controls.Add(new Label { Text = hint, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DimGray }, 2, row);
+        panel.Controls.Add(new Label { Text = hint, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = ModernTheme.MutedText }, 2, row);
     }
 
     private void RefreshCalibrationUi()
@@ -445,8 +502,11 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Top,
             Height = 54,
-            Padding = new Padding(12, 10, 12, 4),
-            Text = T("testHelp")
+            Padding = new Padding(18, 12, 18, 6),
+            Text = T("testHelp"),
+            ForeColor = ModernTheme.MutedText,
+            BackColor = ModernTheme.AppBackground,
+            Font = new Font("Segoe UI", 9F)
         };
 
         _testValues.Controls.Clear();
@@ -476,6 +536,8 @@ public sealed class MainForm : Form
         _testValues.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
         _testValues.Controls.Add(new Label { Text = name, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true }, 0, row);
         var val = new Label { Text = value, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, BorderStyle = BorderStyle.FixedSingle, Padding = new Padding(6, 0, 0, 0) };
+        val.BackColor = Color.FromArgb(248, 250, 252);
+        val.ForeColor = ModernTheme.Text;
         _testValues.Controls.Add(val, 1, row);
         _testValueLabels[key] = val;
     }
@@ -591,12 +653,14 @@ public sealed class MainForm : Form
         var row = 1;
         foreach (var target in TargetCatalog.All)
         {
-            _mapper.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-            var targetLabel = new Label { Text = TargetCatalog.Display(target), AutoSize = false, Dock = DockStyle.Fill, TextAlign = System.Drawing.ContentAlignment.MiddleLeft };
-            var currentLabel = new Label { Text = T("none"), AutoSize = false, Dock = DockStyle.Fill, BorderStyle = BorderStyle.FixedSingle, TextAlign = System.Drawing.ContentAlignment.MiddleLeft, Padding = new Padding(8, 0, 0, 0) };
+            _mapper.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+            var targetLabel = new Label { Text = TargetCatalog.Display(target), AutoSize = false, Dock = DockStyle.Fill, TextAlign = System.Drawing.ContentAlignment.MiddleLeft, ForeColor = ModernTheme.Text, Padding = new Padding(6, 0, 0, 0) };
+            var currentLabel = new Label { Text = T("none"), AutoSize = false, Dock = DockStyle.Fill, BorderStyle = BorderStyle.FixedSingle, TextAlign = System.Drawing.ContentAlignment.MiddleLeft, Padding = new Padding(8, 0, 0, 0), BackColor = Color.FromArgb(248, 250, 252), ForeColor = ModernTheme.MutedText };
             var bindButton = new Button { Text = T("bind"), Dock = DockStyle.Fill, Tag = target };
-            var invert = new CheckBox { Dock = DockStyle.Fill, TextAlign = System.Drawing.ContentAlignment.MiddleCenter, Tag = target, Enabled = TargetCatalog.IsAnalog(target) };
+            var invert = new CheckBox { Dock = DockStyle.Fill, TextAlign = System.Drawing.ContentAlignment.MiddleCenter, Tag = target, Enabled = TargetCatalog.IsAnalog(target), ForeColor = ModernTheme.Accent };
             var clear = new Button { Text = T("clear"), Dock = DockStyle.Fill, Tag = target };
+            ModernTheme.StylePrimaryButton(bindButton);
+            ModernTheme.StyleSecondaryButton(clear);
 
             bindButton.Click += async (_, _) => await BindTargetAsync((string)bindButton.Tag);
             clear.Click += (_, _) => { SetBinding(new Binding { Target = (string)clear.Tag }); RefreshMapperUi(); };
@@ -624,7 +688,10 @@ public sealed class MainForm : Form
             AutoSize = false,
             Dock = DockStyle.Fill,
             TextAlign = System.Drawing.ContentAlignment.MiddleLeft,
-            Font = new System.Drawing.Font(Font, System.Drawing.FontStyle.Bold)
+            Font = new System.Drawing.Font(Font, System.Drawing.FontStyle.Bold),
+            ForeColor = ModernTheme.MutedText,
+            BackColor = Color.FromArgb(248, 250, 252),
+            Padding = new Padding(6, 0, 0, 0)
         }, col, 0);
     }
 
