@@ -11,7 +11,7 @@ public sealed class AppLogger
     public AppLogger(string appDataDirectory)
     {
         Directory.CreateDirectory(appDataDirectory);
-        _path = Path.Combine(appDataDirectory, "SavagePadEmu.log");
+        _path = System.IO.Path.Combine(appDataDirectory, "SavagePadEmu.log");
     }
 
     public void Write(string message)

@@ -141,6 +141,8 @@ public sealed class MainForm : Form
     private readonly object _bindingLock = new();
     private volatile bool _isBinding;
     private bool _isClosing;
+    // Prevent hot-plug refreshes from resetting the active test-device handle.
+    private bool _refreshingDevices;
 
     // User data is kept outside the publish folder so updates do not overwrite profiles.
     private string AppDataDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SavagePadEmu");
@@ -252,7 +254,7 @@ public sealed class MainForm : Form
 
         _refresh.Click += (_, _) => RefreshDevices();
         _language.SelectedIndexChanged += LanguageChanged;
-        _devices.SelectedIndexChanged += (_, _) => ResetTestJoystick();
+        _devices.SelectedIndexChanged += (_, _) => { if (!_refreshingDevices) ResetTestJoystick(); };
         _start.Click += (_, _) => StartEmulation();
         _stop.Click += (_, _) => StopEmulation();
         _save.Click += (_, _) => SaveProfile();
@@ -1578,6 +1580,7 @@ public sealed class MainForm : Form
             var selectedGuid = _devices.SelectedIndex >= 0 && _devices.SelectedIndex < _deviceList.Count
                 ? _deviceList[_devices.SelectedIndex].InstanceGuid
                 : Guid.Empty;
+
             using var directInput = new DirectInput();
             var fresh = directInput.GetDevices(DeviceType.Gamepad, DeviceEnumerationFlags.AttachedOnly)
                 .Concat(directInput.GetDevices(DeviceType.Joystick, DeviceEnumerationFlags.AttachedOnly))
@@ -1590,12 +1593,44 @@ public sealed class MainForm : Form
                 StopEmulation();
             }
 
-            _deviceList = fresh;
-            _devices.Items.Clear();
-            foreach (var device in _deviceList) _devices.Items.Add(device.InstanceName);
-            var savedIndex = selectedGuid == Guid.Empty ? -1 : _deviceList.FindIndex(item => item.InstanceGuid == selectedGuid);
-            if (savedIndex >= 0) _devices.SelectedIndex = savedIndex;
-            else if (_devices.Items.Count > 0) _devices.SelectedIndex = 0;
+            // The watcher runs periodically. Rebuilding the ComboBox on every tick triggers
+            // SelectedIndexChanged, disposes the DirectInput test handle, and caused visible
+            // one-frame releases while a button/stick was held. Only rebuild when the device
+            // topology actually changes.
+            var topologyChanged = fresh.Count != _deviceList.Count ||
+                fresh.Select(d => d.InstanceGuid).OrderBy(g => g)
+                    .SequenceEqual(_deviceList.Select(d => d.InstanceGuid).OrderBy(g => g)) == false;
+
+            if (!topologyChanged)
+            {
+                if (!preserveSelection) Log($"{T("devicesFound")}{fresh.Count}");
+                return;
+            }
+
+            var newSelectedGuid = selectedGuid != Guid.Empty && fresh.Any(item => item.InstanceGuid == selectedGuid)
+                ? selectedGuid
+                : fresh.FirstOrDefault()?.InstanceGuid ?? Guid.Empty;
+
+            _refreshingDevices = true;
+            try
+            {
+                _deviceList = fresh;
+                _devices.BeginUpdate();
+                _devices.Items.Clear();
+                foreach (var device in _deviceList) _devices.Items.Add(device.InstanceName);
+                var selectedIndex = newSelectedGuid == Guid.Empty ? -1 : _deviceList.FindIndex(item => item.InstanceGuid == newSelectedGuid);
+                _devices.SelectedIndex = selectedIndex;
+                _devices.EndUpdate();
+            }
+            finally
+            {
+                _refreshingDevices = false;
+            }
+
+            // Preserve the test device when the same physical joystick remains selected.
+            if (newSelectedGuid != selectedGuid)
+                ResetTestJoystick();
+
             if (!preserveSelection) Log($"{T("devicesFound")}{_devices.Items.Count}");
         }
         catch (Exception ex)
