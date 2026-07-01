@@ -92,6 +92,7 @@ public sealed class MainForm : Form
     private Joystick? _testJoystick;
     private Guid _testJoystickGuid;
     private DateTime _lastTestErrorLog = DateTime.MinValue;
+    private readonly RuntimeDiagnostics _diagnostics = new();
 
     private readonly NumericUpDown _leftDeadzone = Num(8, 0, 50);
     private readonly NumericUpDown _rightDeadzone = Num(8, 0, 50);
@@ -267,6 +268,14 @@ public sealed class MainForm : Form
         "calibrationTab" => "Calibration / Profiles",
         "help" => "Click 'Bind / Set key' on the Xbox control you want to configure, then press a button, axis, or D-pad direction on your physical joystick.",
         "testHelp" => "Test Pad: press buttons and move the sticks. The dots should return to center when released; if they stay off-center, there may be drift.",
+        "rawLeftStick" => "Left stick RAW",
+        "rawRightStick" => "Right stick RAW",
+        "inputSampling" => "Input sampling",
+        "readTime" => "Last input read",
+        "virtualReports" => "Virtual reports",
+        "virtualStatus" => "Virtual controller",
+        "connected" => "Connected",
+        "disconnected" => "Disconnected",
         "leftStick" => "Left Stick",
         "rightStick" => "Right Stick",
         "driftLS" => "LS Drift",
@@ -343,6 +352,14 @@ public sealed class MainForm : Form
         "calibrationTab" => "Calibración / Perfiles",
         "help" => "Tocá 'Bind / Set key' en el control Xbox que quieras configurar y después presioná el botón, eje o cruceta de tu joystick físico.",
         "testHelp" => "Test Pad: presioná botones y mové sticks. Los puntos deben quedar centrados al soltar; si quedan movidos, hay drift.",
+        "rawLeftStick" => "RAW stick izquierdo",
+        "rawRightStick" => "RAW stick derecho",
+        "inputSampling" => "Muestreo de entrada",
+        "readTime" => "Última lectura",
+        "virtualReports" => "Reportes virtuales",
+        "virtualStatus" => "Mando virtual",
+        "connected" => "Conectado",
+        "disconnected" => "Desconectado",
         "leftStick" => "Left Stick",
         "rightStick" => "Right Stick",
         "driftLS" => "Drift LS",
@@ -599,11 +616,17 @@ public sealed class MainForm : Form
         _testValues.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
         _testValues.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
         AddTestRow(T("leftStick"), "0 / 0", "LeftStick");
+        AddTestRow(T("rawLeftStick"), "32768 / 32768", "RawLeftStick");
         AddTestRow(T("rightStick"), "0 / 0", "RightStick");
+        AddTestRow(T("rawRightStick"), "32768 / 32768", "RawRightStick");
         AddTestRow("LT / L2", "0", "LeftTrigger");
         AddTestRow("RT / R2", "0", "RightTrigger");
         AddTestRow(T("driftLS"), T("ok"), "DriftLS");
         AddTestRow(T("driftRS"), T("ok"), "DriftRS");
+        AddTestRow(T("inputSampling"), "0 Hz", "InputSampling");
+        AddTestRow(T("readTime"), "0.00 ms", "ReadTime");
+        AddTestRow(T("virtualReports"), "0 Hz", "VirtualReports");
+        AddTestRow(T("virtualStatus"), T("disconnected"), "VirtualStatus");
         foreach (var t in new[] { "A", "B", "X", "Y", "LB", "RB", "Back", "Start", "LS", "RS", "DPadUp", "DPadRight", "DPadDown", "DPadLeft" })
             AddTestRow(TargetCatalog.Display(t), T("off"), t);
 
@@ -643,7 +666,9 @@ public sealed class MainForm : Form
                 joystick.Poll();
             }
 
+            var readStarted = Stopwatch.GetTimestamp();
             var s = joystick.GetCurrentState();
+            _diagnostics.RecordInputRead(Stopwatch.GetTimestamp() - readStarted);
             var st = BuildVirtualTestState(s);
             _testView.State = st;
             _testView.Invalidate();
@@ -652,8 +677,15 @@ public sealed class MainForm : Form
 
             SetTestText("LeftStick", $"{st.LeftX:+0.000;-0.000;0.000} / {st.LeftY:+0.000;-0.000;0.000}");
             SetTestText("RightStick", $"{st.RightX:+0.000;-0.000;0.000} / {st.RightY:+0.000;-0.000;0.000}");
-            SetTestText("LeftTrigger", st.LeftTrigger.ToString());
-            SetTestText("RightTrigger", st.RightTrigger.ToString());
+            SetTestText("LeftTrigger", $"{st.LeftTrigger} (RAW {st.LeftTriggerRaw})");
+            SetTestText("RightTrigger", $"{st.RightTrigger} (RAW {st.RightTriggerRaw})");
+            SetTestText("RawLeftStick", $"{st.LeftXRaw} / {st.LeftYRaw}");
+            SetTestText("RawRightStick", $"{st.RightXRaw} / {st.RightYRaw}");
+            var diagnostics = _diagnostics.Snapshot();
+            SetTestText("InputSampling", $"{diagnostics.InputHz:0} Hz ({diagnostics.InputReads} total)");
+            SetTestText("ReadTime", diagnostics.LastReadMs <= 0 ? "-" : $"{diagnostics.LastReadMs:0.000} ms");
+            SetTestText("VirtualReports", $"{diagnostics.ReportHz:0} Hz ({diagnostics.VirtualReports} total)");
+            SetTestText("VirtualStatus", _xbox is null ? T("disconnected") : T("connected"));
             SetTestText("DriftLS", Math.Sqrt(st.LeftX * st.LeftX + st.LeftY * st.LeftY) > _calibration.DriftWarning ? T("possibleDrift") : T("ok"));
             SetTestText("DriftRS", Math.Sqrt(st.RightX * st.RightX + st.RightY * st.RightY) > _calibration.DriftWarning ? T("possibleDrift") : T("ok"));
             foreach (var kv in st.Buttons) SetTestText(kv.Key, kv.Value ? T("on") : T("off"));
@@ -711,8 +743,14 @@ public sealed class MainForm : Form
         testState.LeftY = InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, GetBinding("LeftStickY")), true, _calibration);
         testState.RightX = InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, GetBinding("RightStickX")), false, _calibration);
         testState.RightY = InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, GetBinding("RightStickY")), false, _calibration);
-        testState.LeftTrigger = InputMapper.CalibrateTrigger(InputMapper.GetAnalog(input, GetBinding("LeftTrigger")), _calibration);
-        testState.RightTrigger = InputMapper.CalibrateTrigger(InputMapper.GetAnalog(input, GetBinding("RightTrigger")), _calibration);
+        testState.LeftTriggerRaw = InputMapper.GetAnalog(input, GetBinding("LeftTrigger"));
+        testState.RightTriggerRaw = InputMapper.GetAnalog(input, GetBinding("RightTrigger"));
+        testState.LeftTrigger = InputMapper.CalibrateTrigger(testState.LeftTriggerRaw, _calibration);
+        testState.RightTrigger = InputMapper.CalibrateTrigger(testState.RightTriggerRaw, _calibration);
+        testState.LeftXRaw = InputMapper.GetAnalog(input, GetBinding("LeftStickX"));
+        testState.LeftYRaw = InputMapper.GetAnalog(input, GetBinding("LeftStickY"));
+        testState.RightXRaw = InputMapper.GetAnalog(input, GetBinding("RightStickX"));
+        testState.RightYRaw = InputMapper.GetAnalog(input, GetBinding("RightStickY"));
         return testState;
     }
 
@@ -1055,7 +1093,9 @@ public sealed class MainForm : Form
             try
             {
                 joystick.Poll();
+                var readStarted = Stopwatch.GetTimestamp();
                 var input = new InputSnapshot(joystick.GetCurrentState());
+                _diagnostics.RecordInputRead(Stopwatch.GetTimestamp() - readStarted);
                 var revision = Volatile.Read(ref _runtimeRevision);
 
                 // Skip redundant ViGEm reports. This lowers CPU use and bus traffic while preserving
@@ -1112,6 +1152,7 @@ public sealed class MainForm : Form
             }
         }
         xbox.SubmitReport();
+        _diagnostics.RecordVirtualReport();
     }
 
     private string BindingSourceText(Binding b) => b.Kind switch

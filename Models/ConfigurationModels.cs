@@ -55,6 +55,14 @@ public sealed class VirtualTestState
     public double RightY { get; set; }
     public int LeftTrigger { get; set; }
     public int RightTrigger { get; set; }
+
+    // Raw DirectInput values for diagnostics. Output values above already include calibration.
+    public int LeftXRaw { get; set; } = 32768;
+    public int LeftYRaw { get; set; } = 32768;
+    public int RightXRaw { get; set; } = 32768;
+    public int RightYRaw { get; set; } = 32768;
+    public int LeftTriggerRaw { get; set; }
+    public int RightTriggerRaw { get; set; }
 }
 
 public static class TargetCatalog
