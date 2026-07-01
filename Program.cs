@@ -40,14 +40,28 @@ public sealed class Binding
     public bool Invert { get; set; }
 }
 
+public sealed class CalibrationSettings
+{
+    public double LeftStickDeadzone { get; set; } = 0.08;
+    public double RightStickDeadzone { get; set; } = 0.08;
+    public double TriggerDeadzone { get; set; } = 0.05;
+    public double AntiDeadzone { get; set; } = 0.00;
+    public double Sensitivity { get; set; } = 1.00;
+    public double DriftWarning { get; set; } = 0.12;
+    public int PollIntervalMs { get; set; } = 1;
+}
+
 public sealed class Profile
 {
+    public string Name { get; set; } = "Default";
+    public CalibrationSettings Calibration { get; set; } = new();
     public List<Binding> Bindings { get; set; } = new();
 }
 
 public sealed class AppSettings
 {
     public string Language { get; set; } = "es";
+    public CalibrationSettings Calibration { get; set; } = new();
 }
 
 public sealed class MainForm : Form
@@ -61,6 +75,8 @@ public sealed class MainForm : Form
     private readonly Button _load = new() { Text = "Cargar perfil", Width = 105 };
     private readonly Button _defaults = new() { Text = "Mapeo default", Width = 115 };
     private readonly Button _clearAll = new() { Text = "Limpiar", Width = 85 };
+    private readonly Button _saveAs = new() { Text = "Guardar como...", Width = 125 };
+    private readonly Button _openProfileFolder = new() { Text = "Perfiles", Width = 85 };
     private readonly Label _status = new() { AutoSize = true };
     private readonly Label _deviceLabel = new() { AutoSize = true, Padding = new Padding(0, 7, 8, 0) };
     private readonly Label _languageLabel = new() { AutoSize = true, Padding = new Padding(16, 7, 8, 0) };
@@ -71,6 +87,7 @@ public sealed class MainForm : Form
     private readonly TabControl _tabs = new() { Dock = DockStyle.Fill };
     private readonly TabPage _mapTab = new() { Text = "Mapeo" };
     private readonly TabPage _testTab = new() { Text = "Test / Drift" };
+    private readonly TabPage _calibrationTab = new() { Text = "Calibración" };
     private readonly TestPadView _testView = new() { Dock = DockStyle.Fill };
     private readonly TableLayoutPanel _testValues = new() { Dock = DockStyle.Right, Width = 330, Padding = new Padding(12), ColumnCount = 2, AutoScroll = true };
     private readonly Dictionary<string, Label> _testValueLabels = new();
@@ -79,6 +96,17 @@ public sealed class MainForm : Form
     private Joystick? _testJoystick;
     private Guid _testJoystickGuid;
     private DateTime _lastTestErrorLog = DateTime.MinValue;
+
+    private readonly NumericUpDown _leftDeadzone = Num(8, 0, 50);
+    private readonly NumericUpDown _rightDeadzone = Num(8, 0, 50);
+    private readonly NumericUpDown _triggerDeadzone = Num(5, 0, 50);
+    private readonly NumericUpDown _antiDeadzone = Num(0, 0, 40);
+    private readonly NumericUpDown _sensitivity = Num(100, 25, 200);
+    private readonly NumericUpDown _driftWarning = Num(12, 1, 50);
+    private readonly NumericUpDown _pollInterval = Num(1, 1, 16);
+    private readonly Label _calibrationHelp = new() { Dock = DockStyle.Top, Height = 58, Padding = new Padding(12, 8, 12, 4) };
+    private CalibrationSettings _calibration = new();
+    private volatile Binding[] _runtimeBindings = Array.Empty<Binding>();
 
     private readonly string[] _targets = new[]
     {
@@ -103,12 +131,25 @@ public sealed class MainForm : Form
     private string ProfilePath => Path.Combine(AppContext.BaseDirectory, "profile.json");
     private string SettingsPath => Path.Combine(AppContext.BaseDirectory, "settings.json");
 
+    private static NumericUpDown Num(decimal value, decimal min, decimal max) => new()
+    {
+        Minimum = min,
+        Maximum = max,
+        Value = value,
+        DecimalPlaces = 0,
+        Increment = 1,
+        Width = 70,
+        TextAlign = HorizontalAlignment.Right
+    };
+
     public MainForm()
     {
         Text = "SavagePadEmu - Visual Mapper estilo x360ce";
         Width = 980;
         Height = 720;
         MinimumSize = new System.Drawing.Size(900, 620);
+        Font = new Font("Segoe UI", 9F);
+        BackColor = Color.FromArgb(248, 249, 252);
 
         var top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 92, Padding = new Padding(12), AutoSize = false };
         top.Controls.Add(_deviceLabel);
@@ -124,14 +165,18 @@ public sealed class MainForm : Form
         top.Controls.Add(_load);
         top.Controls.Add(_defaults);
         top.Controls.Add(_clearAll);
-        top.SetFlowBreak(_clearAll, true);
+        top.Controls.Add(_saveAs);
+        top.Controls.Add(_openProfileFolder);
+        top.SetFlowBreak(_openProfileFolder, true);
         top.Controls.Add(_status);
 
 
         _mapTab.Controls.Add(_mapper);
         BuildTestPanel();
+        BuildCalibrationPanel();
         _tabs.TabPages.Add(_mapTab);
         _tabs.TabPages.Add(_testTab);
+        _tabs.TabPages.Add(_calibrationTab);
 
         Controls.Add(_tabs);
         Controls.Add(_log);
@@ -141,6 +186,8 @@ public sealed class MainForm : Form
         LoadSettings();
         ApplyLanguage();
         LoadProfileOrDefaults();
+        RefreshCalibrationUi();
+        UpdateRuntimeBindings();
         RefreshMapperUi();
         RefreshDevices();
 
@@ -150,9 +197,11 @@ public sealed class MainForm : Form
         _start.Click += async (_, _) => await StartAsync();
         _stop.Click += (_, _) => StopEmulation();
         _save.Click += (_, _) => SaveProfile();
+        _saveAs.Click += (_, _) => SaveProfileAs();
+        _openProfileFolder.Click += (_, _) => OpenProfileFolder();
         _load.Click += (_, _) => { LoadProfileOrDefaults(forceFile: true); RefreshMapperUi(); };
-        _defaults.Click += (_, _) => { lock (_bindingLock) _bindings = DefaultBindings(); RefreshMapperUi(); Log(T("defaultRestored")); };
-        _clearAll.Click += (_, _) => { lock (_bindingLock) _bindings = _targets.Select(t => new Binding { Target = t }).ToList(); RefreshMapperUi(); Log(T("mappingCleared")); };
+        _defaults.Click += (_, _) => { lock (_bindingLock) _bindings = DefaultBindings(); UpdateRuntimeBindings(); RefreshMapperUi(); Log(T("defaultRestored")); };
+        _clearAll.Click += (_, _) => { lock (_bindingLock) _bindings = _targets.Select(t => new Binding { Target = t }).ToList(); UpdateRuntimeBindings(); RefreshMapperUi(); Log(T("mappingCleared")); };
         _testTimer.Tick += (_, _) => UpdateTestPad();
         _testTimer.Start();
         FormClosing += (_, _) => { _testTimer.Stop(); ResetTestJoystick(); StopEmulation(); };
@@ -176,6 +225,7 @@ public sealed class MainForm : Form
         "connecting" => "Status: connecting virtual Xbox controller...",
         "mappingTab" => "Mapping",
         "testTab" => "Test / Drift",
+        "calibrationTab" => "Calibration / Profiles",
         "help" => "Click 'Bind / Set key' on the Xbox control you want to configure, then press a button, axis, or D-pad direction on your physical joystick.",
         "testHelp" => "Test Pad: press buttons and move the sticks. The dots should return to center when released; if they stay off-center, there may be drift.",
         "leftStick" => "Left Stick",
@@ -214,6 +264,25 @@ public sealed class MainForm : Form
         "inverted" => "inverted",
         "off" => "OFF",
         "on" => "ON",
+        "saveAs" => "Save as...",
+        "profiles" => "Profiles",
+        "calibrationHelp" => "Calibration: tune deadzones to remove drift, adjust sensitivity, and set the polling interval. Lower polling values reduce input lag but may use slightly more CPU.",
+        "leftDeadzone" => "Left stick deadzone (%)",
+        "rightDeadzone" => "Right stick deadzone (%)",
+        "triggerDeadzone" => "Trigger deadzone (%)",
+        "antiDeadzone" => "Anti-deadzone (%)",
+        "sensitivity" => "Stick sensitivity (%)",
+        "driftWarningValue" => "Drift warning (%)",
+        "pollInterval" => "Polling interval (ms)",
+        "settingsApplied" => "Calibration settings applied.",
+        "profileSavedAs" => "Profile saved as: ",
+        "hintLeftDz" => "Recommended: 6-12% if you notice drift.",
+        "hintRightDz" => "Raise it if the dot does not return to center.",
+        "hintTriggerDz" => "Prevents L2/R2 from staying slightly pressed.",
+        "hintAntiDz" => "Compensates for games with internal deadzone. Use low values.",
+        "hintSens" => "100% = linear. Higher values feel more aggressive.",
+        "hintDrift" => "Visual drift warning threshold.",
+        "hintPoll" => "1ms = lower input lag. 4ms = lower CPU usage.",
         _ => key
     } : key switch
     {
@@ -232,6 +301,7 @@ public sealed class MainForm : Form
         "connecting" => "Estado: conectando mando Xbox virtual...",
         "mappingTab" => "Mapeo",
         "testTab" => "Test / Drift",
+        "calibrationTab" => "Calibración / Perfiles",
         "help" => "Tocá 'Bind / Set key' en el control Xbox que quieras configurar y después presioná el botón, eje o cruceta de tu joystick físico.",
         "testHelp" => "Test Pad: presioná botones y mové sticks. Los puntos deben quedar centrados al soltar; si quedan movidos, hay drift.",
         "leftStick" => "Left Stick",
@@ -270,6 +340,25 @@ public sealed class MainForm : Form
         "inverted" => "invertido",
         "off" => "OFF",
         "on" => "ON",
+        "saveAs" => "Guardar como...",
+        "profiles" => "Perfiles",
+        "calibrationHelp" => "Calibración: ajustá deadzones para eliminar drift, sensibilidad de sticks e intervalo de polling. Un valor más bajo reduce input lag, pero puede usar un poco más de CPU.",
+        "leftDeadzone" => "Deadzone stick izquierdo (%)",
+        "rightDeadzone" => "Deadzone stick derecho (%)",
+        "triggerDeadzone" => "Deadzone gatillos (%)",
+        "antiDeadzone" => "Anti-deadzone (%)",
+        "sensitivity" => "Sensibilidad sticks (%)",
+        "driftWarningValue" => "Aviso de drift (%)",
+        "pollInterval" => "Intervalo polling (ms)",
+        "settingsApplied" => "Calibración aplicada.",
+        "profileSavedAs" => "Perfil guardado como: ",
+        "hintLeftDz" => "Recomendado: 6-12% si notás drift.",
+        "hintRightDz" => "Subilo si el punto no vuelve al centro.",
+        "hintTriggerDz" => "Evita que L2/R2 queden apenas presionados.",
+        "hintAntiDz" => "Compensa juegos con deadzone interna. Usar valores bajos.",
+        "hintSens" => "100% = lineal. Más alto = respuesta más agresiva.",
+        "hintDrift" => "Umbral del aviso visual de drift.",
+        "hintPoll" => "1ms = menor input lag. 4ms = menor consumo de CPU.",
         _ => key
     });
 
@@ -285,8 +374,11 @@ public sealed class MainForm : Form
         _load.Text = T("load");
         _defaults.Text = T("defaults");
         _clearAll.Text = T("clearAll");
+        _saveAs.Text = T("saveAs");
+        _openProfileFolder.Text = T("profiles");
         _mapTab.Text = T("mappingTab");
         _testTab.Text = T("testTab");
+        _calibrationTab.Text = T("calibrationTab");
         _help.Text = T("help");
         _status.Text = _xbox is null ? T("stopped") : T("emulating");
         _language.SelectedIndexChanged -= LanguageChanged;
@@ -294,6 +386,8 @@ public sealed class MainForm : Form
         _language.SelectedIndexChanged += LanguageChanged;
         BuildVisualMapper();
         BuildTestPanel();
+        BuildCalibrationPanel();
+        RefreshCalibrationUi();
         RefreshMapperUi();
         _testView.Language = _lang;
         _testView.Invalidate();
@@ -326,6 +420,67 @@ public sealed class MainForm : Form
     {
         try { File.WriteAllText(SettingsPath, JsonSerializer.Serialize(new AppSettings { Language = _lang }, new JsonSerializerOptions { WriteIndented = true })); }
         catch { }
+    }
+
+
+    private void BuildCalibrationPanel()
+    {
+        _calibrationTab.Controls.Clear();
+        _calibrationHelp.Text = T("calibrationHelp");
+        var panel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Padding = new Padding(18),
+            ColumnCount = 3,
+            RowCount = 8,
+            Height = 310
+        };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 260));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        AddCalibrationRow(panel, 0, T("leftDeadzone"), _leftDeadzone, T("hintLeftDz"));
+        AddCalibrationRow(panel, 1, T("rightDeadzone"), _rightDeadzone, T("hintRightDz"));
+        AddCalibrationRow(panel, 2, T("triggerDeadzone"), _triggerDeadzone, T("hintTriggerDz"));
+        AddCalibrationRow(panel, 3, T("antiDeadzone"), _antiDeadzone, T("hintAntiDz"));
+        AddCalibrationRow(panel, 4, T("sensitivity"), _sensitivity, T("hintSens"));
+        AddCalibrationRow(panel, 5, T("driftWarningValue"), _driftWarning, T("hintDrift"));
+        AddCalibrationRow(panel, 6, T("pollInterval"), _pollInterval, T("hintPoll"));
+        var apply = new Button { Text = _lang == "en" ? "Apply" : "Aplicar", Width = 120, Height = 32 };
+        apply.Click += (_, _) => { ApplyCalibrationFromUi(); SaveProfile(); Log(T("settingsApplied")); };
+        panel.Controls.Add(apply, 1, 7);
+        _calibrationTab.Controls.Add(panel);
+        _calibrationTab.Controls.Add(_calibrationHelp);
+    }
+
+    private static void AddCalibrationRow(TableLayoutPanel panel, int row, string label, NumericUpDown control, string hint)
+    {
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        panel.Controls.Add(new Label { Text = label, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, row);
+        panel.Controls.Add(control, 1, row);
+        panel.Controls.Add(new Label { Text = hint, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Color.DimGray }, 2, row);
+    }
+
+    private void RefreshCalibrationUi()
+    {
+        _leftDeadzone.Value = (decimal)Math.Clamp(_calibration.LeftStickDeadzone * 100.0, 0, 50);
+        _rightDeadzone.Value = (decimal)Math.Clamp(_calibration.RightStickDeadzone * 100.0, 0, 50);
+        _triggerDeadzone.Value = (decimal)Math.Clamp(_calibration.TriggerDeadzone * 100.0, 0, 50);
+        _antiDeadzone.Value = (decimal)Math.Clamp(_calibration.AntiDeadzone * 100.0, 0, 40);
+        _sensitivity.Value = (decimal)Math.Clamp(_calibration.Sensitivity * 100.0, 25, 200);
+        _driftWarning.Value = (decimal)Math.Clamp(_calibration.DriftWarning * 100.0, 1, 50);
+        _pollInterval.Value = Math.Clamp(_calibration.PollIntervalMs, 1, 16);
+    }
+
+    private void ApplyCalibrationFromUi()
+    {
+        _calibration.LeftStickDeadzone = (double)_leftDeadzone.Value / 100.0;
+        _calibration.RightStickDeadzone = (double)_rightDeadzone.Value / 100.0;
+        _calibration.TriggerDeadzone = (double)_triggerDeadzone.Value / 100.0;
+        _calibration.AntiDeadzone = (double)_antiDeadzone.Value / 100.0;
+        _calibration.Sensitivity = (double)_sensitivity.Value / 100.0;
+        _calibration.DriftWarning = (double)_driftWarning.Value / 100.0;
+        _calibration.PollIntervalMs = (int)_pollInterval.Value;
+        _testView.Calibration = _calibration;
     }
 
     private void BuildTestPanel()
@@ -398,8 +553,8 @@ public sealed class MainForm : Form
             SetTestText("RightStick", $"{st.RightX:+0.000;-0.000;0.000} / {st.RightY:+0.000;-0.000;0.000}");
             SetTestText("LeftTrigger", st.LeftTrigger.ToString());
             SetTestText("RightTrigger", st.RightTrigger.ToString());
-            SetTestText("DriftLS", Math.Sqrt(st.LeftX * st.LeftX + st.LeftY * st.LeftY) > 0.12 ? T("possibleDrift") : T("ok"));
-            SetTestText("DriftRS", Math.Sqrt(st.RightX * st.RightX + st.RightY * st.RightY) > 0.12 ? T("possibleDrift") : T("ok"));
+            SetTestText("DriftLS", Math.Sqrt(st.LeftX * st.LeftX + st.LeftY * st.LeftY) > _calibration.DriftWarning ? T("possibleDrift") : T("ok"));
+            SetTestText("DriftRS", Math.Sqrt(st.RightX * st.RightX + st.RightY * st.RightY) > _calibration.DriftWarning ? T("possibleDrift") : T("ok"));
             foreach (var kv in st.Buttons) SetTestText(kv.Key, kv.Value ? T("on") : T("off"));
         }
         catch (Exception ex)
@@ -449,16 +604,35 @@ public sealed class MainForm : Form
         var st = new VirtualTestState();
         foreach (var t in new[] { "A", "B", "X", "Y", "LB", "RB", "Back", "Start", "LS", "RS", "DPadUp", "DPadRight", "DPadDown", "DPadLeft" })
             st.Buttons[t] = GetDigital(s, GetBinding(t));
-        st.LeftX = NormalizeAxis(GetAnalog(s, GetBinding("LeftStickX")));
-        st.LeftY = NormalizeAxis(GetAnalog(s, GetBinding("LeftStickY")));
-        st.RightX = NormalizeAxis(GetAnalog(s, GetBinding("RightStickX")));
-        st.RightY = NormalizeAxis(GetAnalog(s, GetBinding("RightStickY")));
-        st.LeftTrigger = AxisToByte(GetAnalog(s, GetBinding("LeftTrigger")));
-        st.RightTrigger = AxisToByte(GetAnalog(s, GetBinding("RightTrigger")));
+        st.LeftX = CalibrateAxis(GetAnalog(s, GetBinding("LeftStickX")), true);
+        st.LeftY = CalibrateAxis(GetAnalog(s, GetBinding("LeftStickY")), true);
+        st.RightX = CalibrateAxis(GetAnalog(s, GetBinding("RightStickX")), false);
+        st.RightY = CalibrateAxis(GetAnalog(s, GetBinding("RightStickY")), false);
+        st.LeftTrigger = CalibrateTrigger(GetAnalog(s, GetBinding("LeftTrigger")));
+        st.RightTrigger = CalibrateTrigger(GetAnalog(s, GetBinding("RightTrigger")));
         return st;
     }
 
-    private static double NormalizeAxis(int value) => Math.Clamp((value - 32768) / 32767.0, -1.0, 1.0);
+    private double CalibrateAxis(int value, bool leftStick)
+    {
+        var x = Math.Clamp((value - 32768) / 32767.0, -1.0, 1.0);
+        var sign = Math.Sign(x);
+        var abs = Math.Abs(x);
+        var dz = leftStick ? _calibration.LeftStickDeadzone : _calibration.RightStickDeadzone;
+        if (abs <= dz) return 0;
+        var scaled = (abs - dz) / Math.Max(0.0001, 1.0 - dz);
+        scaled = Math.Min(1.0, scaled * Math.Max(0.25, _calibration.Sensitivity));
+        if (_calibration.AntiDeadzone > 0 && scaled > 0) scaled = Math.Min(1.0, _calibration.AntiDeadzone + scaled * (1.0 - _calibration.AntiDeadzone));
+        return sign * scaled;
+    }
+
+    private int CalibrateTrigger(int value)
+    {
+        var x = Math.Clamp(value / 65535.0, 0.0, 1.0);
+        if (x <= _calibration.TriggerDeadzone) return 0;
+        var scaled = (x - _calibration.TriggerDeadzone) / Math.Max(0.0001, 1.0 - _calibration.TriggerDeadzone);
+        return (int)Math.Clamp(Math.Round(scaled * 255.0), 0, 255);
+    }
 
     private void BuildVisualMapper()
     {
@@ -618,6 +792,7 @@ public sealed class MainForm : Form
             if (idx >= 0) _bindings[idx] = binding;
             else _bindings.Add(binding);
             _bindings = NormalizeBindings(_bindings);
+            UpdateRuntimeBindings();
         }
     }
 
@@ -679,11 +854,41 @@ public sealed class MainForm : Form
 
     private void SaveProfile()
     {
+        ApplyCalibrationFromUi();
         List<Binding> copy;
         lock (_bindingLock) copy = NormalizeBindings(_bindings);
-        var profile = new Profile { Bindings = copy };
+        var profile = new Profile { Name = "Default", Calibration = _calibration, Bindings = copy };
         File.WriteAllText(ProfilePath, JsonSerializer.Serialize(profile, new JsonSerializerOptions { WriteIndented = true }));
         Log(T("profileSaved"));
+    }
+
+
+    private void SaveProfileAs()
+    {
+        ApplyCalibrationFromUi();
+        using var dialog = new SaveFileDialog
+        {
+            Filter = "SavagePadEmu profile (*.json)|*.json|JSON (*.json)|*.json",
+            FileName = "profile.json",
+            InitialDirectory = AppContext.BaseDirectory
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        List<Binding> copy;
+        lock (_bindingLock) copy = NormalizeBindings(_bindings);
+        var profile = new Profile { Name = Path.GetFileNameWithoutExtension(dialog.FileName), Calibration = _calibration, Bindings = copy };
+        File.WriteAllText(dialog.FileName, JsonSerializer.Serialize(profile, new JsonSerializerOptions { WriteIndented = true }));
+        Log(T("profileSavedAs") + dialog.FileName);
+    }
+
+    private void OpenProfileFolder()
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = AppContext.BaseDirectory, UseShellExecute = true }); } catch { }
+    }
+
+    private void UpdateRuntimeBindings()
+    {
+        lock (_bindingLock)
+            _runtimeBindings = NormalizeBindings(_bindings).Select(b => new Binding { Target = b.Target, Kind = b.Kind, Index = b.Index, Invert = b.Invert }).ToArray();
     }
 
     private void LoadProfileOrDefaults(bool forceFile = false)
@@ -696,6 +901,10 @@ public sealed class MainForm : Form
                 if (profile?.Bindings?.Count > 0)
                 {
                     lock (_bindingLock) _bindings = NormalizeBindings(profile.Bindings);
+                    _calibration = profile.Calibration ?? new CalibrationSettings();
+                    RefreshCalibrationUi();
+                    ApplyCalibrationFromUi();
+                    UpdateRuntimeBindings();
                     Log(T("profileLoaded"));
                     return;
                 }
@@ -707,6 +916,8 @@ public sealed class MainForm : Form
             Log(T("profileLoadError") + ex.Message);
         }
         lock (_bindingLock) _bindings = DefaultBindings();
+        _calibration ??= new CalibrationSettings();
+        UpdateRuntimeBindings();
     }
 
     private List<Binding> NormalizeBindings(List<Binding> loaded)
@@ -797,7 +1008,8 @@ public sealed class MainForm : Form
             _xbox = _vigem.CreateXbox360Controller();
             _xbox.Connect();
             Log(T("virtualConnected"));
-            await Task.Run(() => PollLoop(_deviceList[_devices.SelectedIndex].InstanceGuid, _cts.Token));
+            _status.Text = T("emulating");
+            _ = Task.Run(() => PollLoop(_deviceList[_devices.SelectedIndex].InstanceGuid, _cts.Token));
         }
         catch (Exception ex)
         {
@@ -821,21 +1033,20 @@ public sealed class MainForm : Form
                 joystick.Poll();
                 var state = joystick.GetCurrentState();
                 ApplyState(state);
-                BeginInvoke(() => _status.Text = T("emulating"));
             }
             catch
             {
                 try { joystick.Acquire(); } catch { }
             }
-            Thread.Sleep(4);
+            var delay = Math.Clamp(_calibration.PollIntervalMs, 1, 16);
+            Thread.Sleep(delay);
         }
     }
 
     private void ApplyState(JoystickState s)
     {
         if (_xbox is null) return;
-        List<Binding> bindings;
-        lock (_bindingLock) bindings = _bindings.Select(b => new Binding { Target = b.Target, Kind = b.Kind, Index = b.Index, Invert = b.Invert }).ToList();
+        var bindings = _runtimeBindings;
 
         foreach (var b in bindings)
         {
@@ -855,12 +1066,12 @@ public sealed class MainForm : Form
                 case "DPadRight": SetXboxButton(Xbox360Button.Right, GetDigital(s, b)); break;
                 case "DPadDown": SetXboxButton(Xbox360Button.Down, GetDigital(s, b)); break;
                 case "DPadLeft": SetXboxButton(Xbox360Button.Left, GetDigital(s, b)); break;
-                case "LeftStickX": _xbox.SetAxisValue(Xbox360Axis.LeftThumbX, AxisToShort(GetAnalog(s, b))); break;
-                case "LeftStickY": _xbox.SetAxisValue(Xbox360Axis.LeftThumbY, AxisToShort(GetAnalog(s, b))); break;
-                case "RightStickX": _xbox.SetAxisValue(Xbox360Axis.RightThumbX, AxisToShort(GetAnalog(s, b))); break;
-                case "RightStickY": _xbox.SetAxisValue(Xbox360Axis.RightThumbY, AxisToShort(GetAnalog(s, b))); break;
-                case "LeftTrigger": _xbox.SetSliderValue(Xbox360Slider.LeftTrigger, AxisToByte(GetAnalog(s, b))); break;
-                case "RightTrigger": _xbox.SetSliderValue(Xbox360Slider.RightTrigger, AxisToByte(GetAnalog(s, b))); break;
+                case "LeftStickX": _xbox.SetAxisValue(Xbox360Axis.LeftThumbX, AxisToShort(CalibrateAxis(GetAnalog(s, b), true))); break;
+                case "LeftStickY": _xbox.SetAxisValue(Xbox360Axis.LeftThumbY, AxisToShort(CalibrateAxis(GetAnalog(s, b), true))); break;
+                case "RightStickX": _xbox.SetAxisValue(Xbox360Axis.RightThumbX, AxisToShort(CalibrateAxis(GetAnalog(s, b), false))); break;
+                case "RightStickY": _xbox.SetAxisValue(Xbox360Axis.RightThumbY, AxisToShort(CalibrateAxis(GetAnalog(s, b), false))); break;
+                case "LeftTrigger": _xbox.SetSliderValue(Xbox360Slider.LeftTrigger, (byte)CalibrateTrigger(GetAnalog(s, b))); break;
+                case "RightTrigger": _xbox.SetSliderValue(Xbox360Slider.RightTrigger, (byte)CalibrateTrigger(GetAnalog(s, b))); break;
             }
         }
         _xbox.SubmitReport();
@@ -937,10 +1148,9 @@ public sealed class MainForm : Form
         _ => T("none")
     };
 
-    private static short AxisToShort(int value)
+    private static short AxisToShort(double normalized)
     {
-        var clamped = Math.Clamp(value, 0, 65535);
-        return (short)(clamped - 32768);
+        return (short)Math.Clamp(Math.Round(normalized * 32767.0), short.MinValue, short.MaxValue);
     }
 
     private static byte AxisToByte(int value)
@@ -991,6 +1201,7 @@ public sealed class TestPadView : UserControl
 {
     public VirtualTestState State { get; set; } = new();
     public string Language { get; set; } = "es";
+    public CalibrationSettings Calibration { get; set; } = new();
 
     public TestPadView()
     {
@@ -1004,7 +1215,7 @@ public sealed class TestPadView : UserControl
         var g = e.Graphics;
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         using var text = new SolidBrush(Color.Black);
-        using var body = new SolidBrush(Color.FromArgb(225, 225, 225));
+        using var body = new SolidBrush(Color.FromArgb(232, 236, 244));
         using var outline = new Pen(Color.FromArgb(70, 70, 70), 2);
         using var on = new SolidBrush(Color.FromArgb(30, 140, 60));
         using var off = new SolidBrush(Color.White);
