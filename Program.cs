@@ -136,10 +136,15 @@ public sealed class MainForm : Form
     private volatile bool _isBinding;
     private bool _isClosing;
 
-    private string DefaultProfilePath => Path.Combine(AppContext.BaseDirectory, "profile.json");
-    private string ProfileDirectory => Path.Combine(AppContext.BaseDirectory, "Profiles");
+    // User data is kept outside the publish folder so updates do not overwrite profiles.
+    private string AppDataDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SavagePadEmu");
+    private string DefaultProfilePath => Path.Combine(ProfileDirectory, "Default.json");
+    private string ProfileDirectory => Path.Combine(AppDataDirectory, "Profiles");
     private string ProfilePath => string.IsNullOrWhiteSpace(_activeProfilePath) ? DefaultProfilePath : _activeProfilePath;
-    private string SettingsPath => Path.Combine(AppContext.BaseDirectory, "settings.json");
+    private string SettingsPath => Path.Combine(AppDataDirectory, "settings.json");
+    private string LegacyDefaultProfilePath => Path.Combine(AppContext.BaseDirectory, "profile.json");
+    private string LegacyProfileDirectory => Path.Combine(AppContext.BaseDirectory, "Profiles");
+    private string LegacySettingsPath => Path.Combine(AppContext.BaseDirectory, "settings.json");
 
     private static NumericUpDown Num(decimal value, decimal min, decimal max) => new()
     {
@@ -224,6 +229,7 @@ public sealed class MainForm : Form
 
         ApplyModernChrome();
 
+        MigrateLegacyProfileData();
         LoadSettings();
         ApplyLanguage();
         LoadProfileOrDefaults();
@@ -246,7 +252,7 @@ public sealed class MainForm : Form
         _profileSelector.SelectedIndexChanged += (_, _) => ProfileSelectionChanged();
         _gameWatcherTimer.Tick += (_, _) => CheckGameProfileAutoSwitch();
         _gameWatcherTimer.Start();
-        _load.Click += (_, _) => { LoadProfileOrDefaults(forceFile: true); RefreshMapperUi(); };
+        _load.Click += (_, _) => BrowseAndLoadProfile();
         _defaults.Click += (_, _) => { lock (_bindingLock) _bindings = TargetCatalog.CreateDefaultBindings(); UpdateRuntimeBindings(); RefreshMapperUi(); Log(T("defaultRestored")); };
         _clearAll.Click += (_, _) => { lock (_bindingLock) _bindings = TargetCatalog.All.Select(t => new Binding { Target = t }).ToList(); UpdateRuntimeBindings(); RefreshMapperUi(); Log(T("mappingCleared")); };
         _testTimer.Tick += (_, _) => UpdateTestPad();
@@ -323,10 +329,10 @@ public sealed class MainForm : Form
         "mappingCleared" => "Mapping cleared.",
         "testConnected" => "Test Pad connected to the physical joystick.",
         "testReadError" => "Test Pad could not read the joystick: ",
-        "profileSaved" => "Profile saved to profile.json",
-        "profileLoaded" => "Profile loaded from profile.json",
-        "profileMissing" => "profile.json was not found next to the .exe. Loading default mapping.",
-        "profileLoadError" => "Could not load profile.json: ",
+        "profileSaved" => "Profile saved.",
+        "profileLoaded" => "Profile loaded.",
+        "profileMissing" => "No profile was found. Loading the default mapping.",
+        "profileLoadError" => "Could not load profile: ",
         "devicesFound" => "Devices found: ",
         "deviceError" => "Joystick scan error: ",
         "virtualConnected" => "Virtual Xbox 360 controller connected. Test it with joy.cpl or in-game.",
@@ -431,10 +437,10 @@ public sealed class MainForm : Form
         "mappingCleared" => "Mapeo limpiado.",
         "testConnected" => "Test Pad conectado al joystick físico.",
         "testReadError" => "Test Pad no pudo leer el joystick: ",
-        "profileSaved" => "Perfil guardado en profile.json",
-        "profileLoaded" => "Perfil cargado desde profile.json",
-        "profileMissing" => "No encontré profile.json junto al .exe. Cargo el mapeo default.",
-        "profileLoadError" => "No se pudo cargar profile.json: ",
+        "profileSaved" => "Perfil guardado.",
+        "profileLoaded" => "Perfil cargado.",
+        "profileMissing" => "No se encontró un perfil. Cargo el mapeo default.",
+        "profileLoadError" => "No se pudo cargar el perfil: ",
         "devicesFound" => "Dispositivos encontrados: ",
         "deviceError" => "Error al buscar joysticks: ",
         "virtualConnected" => "Mando Xbox 360 virtual conectado. Probá con joy.cpl o dentro del juego.",
@@ -536,6 +542,29 @@ public sealed class MainForm : Form
         }
     }
 
+    private void MigrateLegacyProfileData()
+    {
+        try
+        {
+            Directory.CreateDirectory(ProfileDirectory);
+            if (File.Exists(LegacyDefaultProfilePath) && !File.Exists(DefaultProfilePath))
+                File.Copy(LegacyDefaultProfilePath, DefaultProfilePath);
+
+            if (Directory.Exists(LegacyProfileDirectory))
+            {
+                foreach (var source in Directory.EnumerateFiles(LegacyProfileDirectory, "*.json", SearchOption.TopDirectoryOnly))
+                {
+                    var destination = Path.Combine(ProfileDirectory, Path.GetFileName(source));
+                    if (!File.Exists(destination)) File.Copy(source, destination);
+                }
+            }
+
+            if (File.Exists(LegacySettingsPath) && !File.Exists(SettingsPath))
+                File.Copy(LegacySettingsPath, SettingsPath);
+        }
+        catch { }
+    }
+
     private void LoadSettings()
     {
         if (_profileRepository.TryLoadSettings(SettingsPath, out var settings) && settings is not null)
@@ -543,7 +572,7 @@ public sealed class MainForm : Form
             _appSettings = settings;
             _appSettings.GameProfiles ??= new();
             _lang = settings.Language == "en" ? "en" : "es";
-            _activeProfilePath = string.IsNullOrWhiteSpace(settings.ActiveProfilePath) ? DefaultProfilePath : settings.ActiveProfilePath;
+            _activeProfilePath = string.IsNullOrWhiteSpace(settings.ActiveProfilePath) ? DefaultProfilePath : NormalizeStoredProfilePath(settings.ActiveProfilePath);
         }
         else
         {
@@ -552,6 +581,19 @@ public sealed class MainForm : Form
             _lang = "es";
         }
         _language.SelectedIndex = _lang == "en" ? 1 : 0;
+    }
+
+    private string NormalizeStoredProfilePath(string storedPath)
+    {
+        try
+        {
+            if (string.Equals(Path.GetFullPath(storedPath), Path.GetFullPath(LegacyDefaultProfilePath), StringComparison.OrdinalIgnoreCase))
+                return DefaultProfilePath;
+            if (Path.GetFullPath(storedPath).StartsWith(Path.GetFullPath(LegacyProfileDirectory), StringComparison.OrdinalIgnoreCase))
+                return Path.Combine(ProfileDirectory, Path.GetFileName(storedPath));
+        }
+        catch { }
+        return storedPath;
     }
 
     private void SaveSettings()
@@ -1219,13 +1261,28 @@ public sealed class MainForm : Form
     private void SaveProfile()
     {
         ApplyCalibrationFromUi();
+        Directory.CreateDirectory(ProfileDirectory);
+        if (string.IsNullOrWhiteSpace(_activeProfilePath)) _activeProfilePath = DefaultProfilePath;
         List<Binding> copy;
         lock (_bindingLock) copy = TargetCatalog.Normalize(_bindings);
         var profile = new Profile { Name = Path.GetFileNameWithoutExtension(ProfilePath), Calibration = _calibration.Clone(), Bindings = copy };
         _profileRepository.SaveProfile(ProfilePath, profile);
         SaveSettings();
         RefreshProfileSelector();
-        Log(T("profileSaved"));
+        Log(T("profileSaved") + " " + ProfilePath);
+    }
+
+    private void BrowseAndLoadProfile()
+    {
+        Directory.CreateDirectory(ProfileDirectory);
+        using var dialog = new OpenFileDialog
+        {
+            Filter = "SavagePadEmu profile (*.json)|*.json|JSON (*.json)|*.json",
+            InitialDirectory = ProfileDirectory,
+            Title = _lang == "en" ? "Open profile" : "Abrir perfil"
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        LoadProfileFromPath(dialog.FileName, showError: true);
     }
 
     private void SaveProfileAs()
@@ -1235,7 +1292,7 @@ public sealed class MainForm : Form
         using var dialog = new SaveFileDialog
         {
             Filter = "SavagePadEmu profile (*.json)|*.json|JSON (*.json)|*.json",
-            FileName = "profile.json",
+            FileName = "New profile.json",
             InitialDirectory = ProfileDirectory
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
