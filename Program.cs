@@ -536,19 +536,38 @@ public sealed class MainForm : Form
     private void BuildMappingPanel()
     {
         _mapTab.Controls.Clear();
-        var split = new SplitContainer
+
+        // A TableLayoutPanel is used instead of SplitContainer here. On first startup
+        // WinForms can temporarily lay out a SplitContainer narrower than the sum of
+        // its minimum panel widths, which throws a SplitterDistance exception.
+        var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            SplitterDistance = 480,
             BackColor = ModernTheme.AppBackground,
-            Panel1MinSize = 400,
-            Panel2MinSize = 390
+            ColumnCount = 2,
+            RowCount = 1,
+            Padding = new Padding(8)
         };
-        var visualCard = new ModernCard { Dock = DockStyle.Fill, Margin = new Padding(12), Padding = new Padding(8) };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+        var visualCard = new ModernCard
+        {
+            Dock = DockStyle.Fill,
+            Margin = new Padding(4),
+            Padding = new Padding(8)
+        };
+        _visualMapper.Dock = DockStyle.Fill;
         visualCard.Controls.Add(_visualMapper);
-        split.Panel1.Controls.Add(visualCard);
-        split.Panel2.Controls.Add(_mapper);
-        _mapTab.Controls.Add(split);
+
+        _mapper.Dock = DockStyle.Fill;
+        _mapper.Margin = new Padding(4);
+
+        layout.Controls.Add(visualCard, 0, 0);
+        layout.Controls.Add(_mapper, 1, 0);
+        _mapTab.Controls.Add(layout);
+
         _visualMapper.BindRequested -= VisualMapperBindRequested;
         _visualMapper.BindRequested += VisualMapperBindRequested;
     }

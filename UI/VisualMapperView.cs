@@ -88,7 +88,6 @@ public sealed class VisualMapperView : Control
             }
     }
 
-        }
         catch (Exception ex)
         {
             using var brush = new SolidBrush(Color.Firebrick);
