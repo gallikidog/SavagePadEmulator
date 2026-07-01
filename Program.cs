@@ -1360,15 +1360,22 @@ public sealed class MainForm : Form
 
     private void LoadProfileFromPath(string path, bool showError = false)
     {
-        if (!_profileRepository.TryLoadProfile(path, out var profile, out var error) || profile?.Bindings.Count <= 0)
+        if (!_profileRepository.TryLoadProfile(path, out var profile, out var error) ||
+            profile is null ||
+            profile.Bindings is null ||
+            profile.Bindings.Count <= 0)
         {
             if (error is not null) Log(T("profileLoadErrorFile") + error.Message);
             if (showError) MessageBox.Show(T("profileLoadErrorFile") + Path.GetFileName(path), "SavagePadEmu", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
+
+        // `profile` is verified non-null above; keeping a local non-null reference
+        // prevents nullable-flow warnings and protects malformed JSON profiles.
+        var loadedProfile = profile;
         _activeProfilePath = path;
-        lock (_bindingLock) _bindings = TargetCatalog.Normalize(profile.Bindings);
-        _calibration = profile.Calibration ?? new CalibrationSettings();
+        lock (_bindingLock) _bindings = TargetCatalog.Normalize(loadedProfile.Bindings);
+        _calibration = loadedProfile.Calibration ?? new CalibrationSettings();
         RefreshCalibrationUi();
         ApplyCalibrationFromUi();
         UpdateRuntimeBindings();

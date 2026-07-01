@@ -25,3 +25,7 @@ dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=
 
 ## Profile storage (v0.8.1)
 Profiles and settings are now stored in `%LOCALAPPDATA%\SavagePadEmu\Profiles` and `%LOCALAPPDATA%\SavagePadEmu\settings.json`, not next to the executable. Existing `profile.json`, `settings.json`, and `Profiles` data from the old executable folder are automatically copied on first start when possible. Use **Cargar perfil** to open any `.json` profile, or select one from **Calibración / Perfiles**.
+
+
+## v0.8.2
+- Fixed nullable-reference warning when loading a malformed or incomplete profile.
