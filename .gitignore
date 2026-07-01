@@ -5,3 +5,5 @@ publish/
 *.exe
 *.dll
 *.pdb
+artifacts/
+publish/

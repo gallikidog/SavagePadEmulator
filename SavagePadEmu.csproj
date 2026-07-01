@@ -7,6 +7,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>SavagePadEmu</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>1.0.3</Version>
+    <AssemblyVersion>1.0.3.0</AssemblyVersion>
+    <FileVersion>1.0.3.0</FileVersion>
+    <InformationalVersion>1.0.3</InformationalVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Nefarius.ViGEm.Client" Version="1.21.256" />
