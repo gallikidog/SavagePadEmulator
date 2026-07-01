@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
 using Nefarius.ViGEm.Client;
@@ -194,7 +195,7 @@ public sealed class MainForm : Form
         _refresh.Click += (_, _) => RefreshDevices();
         _language.SelectedIndexChanged += LanguageChanged;
         _devices.SelectedIndexChanged += (_, _) => ResetTestJoystick();
-        _start.Click += async (_, _) => await StartAsync();
+        _start.Click += (_, _) => StartEmulation();
         _stop.Click += (_, _) => StopEmulation();
         _save.Click += (_, _) => SaveProfile();
         _saveAs.Click += (_, _) => SaveProfileAs();
@@ -664,13 +665,7 @@ public sealed class MainForm : Form
 
             bindButton.Click += async (_, _) => await BindTargetAsync((string)bindButton.Tag);
             clear.Click += (_, _) => { SetBinding(new Binding { Target = (string)clear.Tag }); RefreshMapperUi(); };
-            invert.CheckedChanged += (_, _) =>
-            {
-                var t = (string)invert.Tag;
-                var b = GetBinding(t);
-                b.Invert = invert.Checked;
-                SetBinding(b);
-            };
+            invert.CheckedChanged += InvertChangedDummy;
 
             _bindingLabels[target] = currentLabel;
             _invertChecks[target] = invert;
@@ -988,7 +983,7 @@ public sealed class MainForm : Form
         return 3;
     }
 
-    private async Task StartAsync()
+    private void StartEmulation()
     {
         if (_devices.SelectedIndex < 0 || _devices.SelectedIndex >= _deviceList.Count)
         {
@@ -1021,10 +1016,15 @@ public sealed class MainForm : Form
 
     private void PollLoop(Guid instanceGuid, CancellationToken token)
     {
+        Thread.CurrentThread.Priority = ThreadPriority.AboveNormal;
+
         using var directInput = new DirectInput();
         using var joystick = new Joystick(directInput, instanceGuid);
         joystick.Properties.BufferSize = 128;
         joystick.Acquire();
+
+        var stopwatch = Stopwatch.StartNew();
+        long lastTick = 0;
 
         while (!token.IsCancellationRequested)
         {
@@ -1038,8 +1038,23 @@ public sealed class MainForm : Form
             {
                 try { joystick.Acquire(); } catch { }
             }
+
             var delay = Math.Clamp(_calibration.PollIntervalMs, 1, 16);
-            Thread.Sleep(delay);
+            if (delay <= 1)
+            {
+                // Para el modo de menor input lag evitamos dormir demasiado tiempo.
+                // Yield baja el consumo frente a un spin agresivo y mantiene respuesta rápida.
+                Thread.Yield();
+            }
+            else
+            {
+                token.WaitHandle.WaitOne(delay);
+            }
+
+            // Evita que un joystick problemático haga un loop extremadamente agresivo si Poll retorna instantáneo.
+            var now = stopwatch.ElapsedMilliseconds;
+            if (now == lastTick) Thread.Yield();
+            lastTick = now;
         }
     }
 

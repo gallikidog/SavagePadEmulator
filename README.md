@@ -1,22 +1,31 @@
-# SavagePadEmu v0.2
+# SavagePadEmu v0.2.1
 
 Emulador de joystick Xbox 360 virtual para Windows 11 usando ViGEmBus, SharpDX.DirectInput y WinForms.
 
-## Cambios principales
+## Cambios de esta revisión
 
-- Interfaz más moderna y ordenada.
-- Mapeo visual estilo x360ce con etiquetas Xbox / PlayStation.
+- Corregido el warning `CS1998` del método de inicio de emulación.
+- Optimizado el loop de polling para menor input lag:
+  - hilo de emulación con prioridad `AboveNormal`;
+  - salida más rápida al detener usando `CancellationToken.WaitHandle`;
+  - modo de `1 ms` con `Thread.Yield()` para evitar sleeps largos.
+- Corregido el handler de `Invertir` para evitar eventos duplicados al refrescar la interfaz.
+- Se mantiene la interfaz con idioma Español / English, mapeo visual, calibración, perfiles JSON y Test / Drift.
+
+## Funciones principales
+
+- Interfaz ordenada estilo x360ce.
+- Mapeo visual con etiquetas Xbox / PlayStation.
 - Botón `Bind / Set key` por cada entrada virtual.
 - Panel `Test / Drift` para probar botones, gatillos y sticks.
-- Nueva pestaña `Calibración / Perfiles`.
 - Deadzone independiente para stick izquierdo y derecho.
 - Deadzone para gatillos L2/R2.
 - Anti-deadzone y sensibilidad de sticks.
 - Umbral configurable para aviso de drift.
 - Perfiles JSON con mapeo + calibración.
 - Guardado rápido en `profile.json` y guardado manual con `Guardar como...`.
-- Compatibilidad ampliada con dispositivos DirectInput `Gamepad` y `Joystick`.
-- Loop de emulación optimizado: snapshot de bindings, menos trabajo en UI y polling configurable desde 1 ms.
+- Compatibilidad con dispositivos DirectInput `Gamepad` y `Joystick`.
+- Polling configurable desde `1 ms` hasta `16 ms`.
 
 ## Requisitos
 
