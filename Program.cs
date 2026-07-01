@@ -102,6 +102,13 @@ public sealed class MainForm : Form
     private readonly NumericUpDown _driftWarning = Num(12, 1, 50);
     private readonly NumericUpDown _pollInterval = Num(1, 1, 16);
     private readonly Label _calibrationHelp = new() { Dock = DockStyle.Top, Height = 58, Padding = new Padding(12, 8, 12, 4) };
+    private readonly Label _wizardStatus = new() { AutoSize = true, ForeColor = ModernTheme.MutedText, Padding = new Padding(0, 8, 0, 0) };
+    private readonly Button _captureCenter = new() { Width = 150, Height = 32 };
+    private readonly Button _captureRange = new() { Width = 180, Height = 32 };
+    private readonly Button _resetAxisCalibration = new() { Width = 160, Height = 32 };
+    private bool _rangeCaptureActive;
+    private DateTime _rangeCaptureEndsUtc;
+    private readonly Dictionary<string, AxisCalibration> _rangeCapture = new();
     private CalibrationSettings _calibration = new();
     private volatile Binding[] _runtimeBindings = Array.Empty<Binding>();
     private int _runtimeRevision;
@@ -330,7 +337,18 @@ public sealed class MainForm : Form
         "hintAntiDz" => "Compensates for games with internal deadzone. Use low values.",
         "hintSens" => "100% = linear. Higher values feel more aggressive.",
         "hintDrift" => "Visual drift warning threshold.",
-        "hintPoll" => "1ms = lower input lag. 4ms = lower CPU usage.",
+                "hintPoll" => "1ms = lower input lag. 4ms = lower CPU usage.",
+        "guidedCalibration" => "Guided stick calibration",
+        "captureCenter" => "1. Capture center",
+        "captureRange" => "2. Capture range (5s)",
+        "finishRange" => "Finish range",
+        "resetAxisCalibration" => "Reset stick calibration",
+        "wizardReady" => "Leave both sticks centered, then capture the center. Next, move both sticks fully in every direction for 5 seconds.",
+        "centerCaptured" => "Center captured. Now capture the range and move both sticks fully.",
+        "rangeCapturing" => "Recording range: move both sticks fully in every direction...",
+        "rangeCaptured" => "Stick range calibration saved.",
+        "axisCalibrationReset" => "Saved stick centers/ranges were reset.",
+
         _ => key
     } : key switch
     {
@@ -414,7 +432,18 @@ public sealed class MainForm : Form
         "hintAntiDz" => "Compensa juegos con deadzone interna. Usar valores bajos.",
         "hintSens" => "100% = lineal. Más alto = respuesta más agresiva.",
         "hintDrift" => "Umbral del aviso visual de drift.",
-        "hintPoll" => "1ms = menor input lag. 4ms = menor consumo de CPU.",
+                "hintPoll" => "1ms = menor input lag. 4ms = menor consumo de CPU.",
+        "guidedCalibration" => "Calibración guiada de sticks",
+        "captureCenter" => "1. Capturar centro",
+        "captureRange" => "2. Capturar recorrido (5s)",
+        "finishRange" => "Finalizar recorrido",
+        "resetAxisCalibration" => "Restaurar calibración sticks",
+        "wizardReady" => "Dejá ambos sticks centrados y capturá el centro. Luego capturá el recorrido y mové ambos sticks al máximo en todas las direcciones durante 5 segundos.",
+        "centerCaptured" => "Centro capturado. Ahora capturá el recorrido y mové ambos sticks al máximo.",
+        "rangeCapturing" => "Grabando recorrido: mové ambos sticks al máximo en todas las direcciones...",
+        "rangeCaptured" => "Calibración de recorrido guardada.",
+        "axisCalibrationReset" => "Se restauraron los centros/recorridos de sticks.",
+
         _ => key
     });
 
@@ -480,6 +509,42 @@ public sealed class MainForm : Form
     {
         _calibrationTab.Controls.Clear();
         _calibrationHelp.Text = T("calibrationHelp");
+
+        var wizardCard = new ModernCard
+        {
+            Dock = DockStyle.Top,
+            Height = 126,
+            Padding = new Padding(18),
+            Margin = new Padding(16)
+        };
+        var wizardTitle = new Label
+        {
+            Text = T("guidedCalibration"),
+            Dock = DockStyle.Top,
+            Height = 24,
+            Font = new Font("Segoe UI Semibold", 10F),
+            ForeColor = ModernTheme.Text
+        };
+        var wizardButtons = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 44, Padding = new Padding(0, 4, 0, 0) };
+        _captureCenter.Text = T("captureCenter");
+        _captureRange.Text = T("captureRange");
+        _resetAxisCalibration.Text = T("resetAxisCalibration");
+        ModernTheme.StylePrimaryButton(_captureCenter);
+        ModernTheme.StylePrimaryButton(_captureRange);
+        ModernTheme.StyleSecondaryButton(_resetAxisCalibration);
+        _captureCenter.Click -= CaptureCenterClicked;
+        _captureCenter.Click += CaptureCenterClicked;
+        _captureRange.Click -= CaptureRangeClicked;
+        _captureRange.Click += CaptureRangeClicked;
+        _resetAxisCalibration.Click -= ResetAxisCalibrationClicked;
+        _resetAxisCalibration.Click += ResetAxisCalibrationClicked;
+        wizardButtons.Controls.Add(_captureCenter);
+        wizardButtons.Controls.Add(_captureRange);
+        wizardButtons.Controls.Add(_resetAxisCalibration);
+        wizardButtons.Controls.Add(_wizardStatus);
+        wizardCard.Controls.Add(wizardButtons);
+        wizardCard.Controls.Add(wizardTitle);
+
         var card = new ModernCard
         {
             Dock = DockStyle.Top,
@@ -509,8 +574,11 @@ public sealed class MainForm : Form
         apply.Click += (_, _) => { ApplyCalibrationFromUi(); SaveProfile(); Log(T("settingsApplied")); };
         panel.Controls.Add(apply, 1, 7);
         card.Controls.Add(panel);
+
         _calibrationTab.Controls.Add(card);
+        _calibrationTab.Controls.Add(wizardCard);
         _calibrationTab.Controls.Add(_calibrationHelp);
+        UpdateCalibrationWizardText();
     }
 
     private static void AddCalibrationRow(TableLayoutPanel panel, int row, string label, NumericUpDown control, string hint)
@@ -520,6 +588,143 @@ public sealed class MainForm : Form
         ModernTheme.StyleInput(control);
         panel.Controls.Add(control, 1, row);
         panel.Controls.Add(new Label { Text = hint, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = ModernTheme.MutedText }, 2, row);
+    }
+
+    private void CaptureCenterClicked(object? sender, EventArgs e)
+    {
+        if (!TryGetCurrentTestState(out var state)) return;
+        CaptureCenters(state);
+        _rangeCaptureActive = false;
+        ApplyCalibrationFromUi();
+        SaveProfile();
+        UpdateCalibrationWizardText(T("centerCaptured"));
+        Log(T("centerCaptured"));
+    }
+
+    private void CaptureRangeClicked(object? sender, EventArgs e)
+    {
+        if (_rangeCaptureActive)
+        {
+            FinalizeRangeCapture();
+            return;
+        }
+
+        if (!TryGetCurrentTestState(out var state)) return;
+        CaptureCenters(state);
+        _rangeCapture.Clear();
+        foreach (var pair in _calibration.AxisCalibrations)
+            _rangeCapture[pair.Key] = pair.Value.Clone();
+
+        _rangeCaptureActive = true;
+        _rangeCaptureEndsUtc = DateTime.UtcNow.AddSeconds(5);
+        UpdateCalibrationWizardText(T("rangeCapturing"));
+        Log(T("rangeCapturing"));
+    }
+
+    private void ResetAxisCalibrationClicked(object? sender, EventArgs e)
+    {
+        _rangeCaptureActive = false;
+        _rangeCapture.Clear();
+        _calibration.AxisCalibrations = new();
+        ApplyCalibrationFromUi();
+        SaveProfile();
+        UpdateCalibrationWizardText(T("axisCalibrationReset"));
+        Log(T("axisCalibrationReset"));
+    }
+
+    private bool TryGetCurrentTestState(out VirtualTestState state)
+    {
+        state = new VirtualTestState();
+        if (_devices.SelectedIndex < 0 || _devices.SelectedIndex >= _deviceList.Count)
+        {
+            MessageBox.Show(T("selectJoystick"), "SavagePadEmu", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return false;
+        }
+
+        try
+        {
+            var joystick = GetOrCreateTestJoystick(_deviceList[_devices.SelectedIndex].InstanceGuid);
+            if (joystick is null) return false;
+            joystick.Poll();
+            state = BuildVirtualTestState(joystick.GetCurrentState());
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log(T("testReadError") + ex.Message);
+            return false;
+        }
+    }
+
+    private void CaptureCenters(VirtualTestState state)
+    {
+        _calibration.AxisCalibrations ??= new();
+        SetCenter("LeftStickX", state.LeftXRaw);
+        SetCenter("LeftStickY", state.LeftYRaw);
+        SetCenter("RightStickX", state.RightXRaw);
+        SetCenter("RightStickY", state.RightYRaw);
+    }
+
+    private void SetCenter(string target, int value)
+    {
+        _calibration.AxisCalibrations[target] = new AxisCalibration
+        {
+            Center = value,
+            Minimum = Math.Max(0, value - 1),
+            Maximum = Math.Min(65535, value + 1)
+        };
+    }
+
+    private void CaptureRangeSample(VirtualTestState state)
+    {
+        if (!_rangeCaptureActive) return;
+        UpdateRange("LeftStickX", state.LeftXRaw);
+        UpdateRange("LeftStickY", state.LeftYRaw);
+        UpdateRange("RightStickX", state.RightXRaw);
+        UpdateRange("RightStickY", state.RightYRaw);
+
+        if (DateTime.UtcNow >= _rangeCaptureEndsUtc)
+            FinalizeRangeCapture();
+        else
+            UpdateCalibrationWizardText(T("rangeCapturing"));
+    }
+
+    private void UpdateRange(string target, int value)
+    {
+        if (!_rangeCapture.TryGetValue(target, out var calibration)) return;
+        calibration.Minimum = Math.Min(calibration.Minimum, value);
+        calibration.Maximum = Math.Max(calibration.Maximum, value);
+    }
+
+    private void FinalizeRangeCapture()
+    {
+        _rangeCaptureActive = false;
+        _calibration.AxisCalibrations = _rangeCapture
+            .Where(pair => pair.Value.Minimum < pair.Value.Center - 400 && pair.Value.Maximum > pair.Value.Center + 400)
+            .ToDictionary(pair => pair.Key, pair => pair.Value.Clone());
+        _rangeCapture.Clear();
+        ApplyCalibrationFromUi();
+        SaveProfile();
+        UpdateCalibrationWizardText(T("rangeCaptured"));
+        Log(T("rangeCaptured"));
+    }
+
+    private void UpdateCalibrationWizardText(string? message = null)
+    {
+        if (_rangeCaptureActive)
+        {
+            var remaining = Math.Max(0, (_rangeCaptureEndsUtc - DateTime.UtcNow).TotalSeconds);
+            _wizardStatus.Text = $"{T("rangeCapturing")} {remaining:0.0}s";
+            _captureRange.Text = T("finishRange");
+            _captureCenter.Enabled = false;
+            _resetAxisCalibration.Enabled = false;
+            return;
+        }
+
+        _wizardStatus.Text = message ?? T("wizardReady");
+        _captureRange.Text = T("captureRange");
+        _captureCenter.Enabled = true;
+        _resetAxisCalibration.Enabled = true;
     }
 
     private void RefreshCalibrationUi()
@@ -544,7 +749,8 @@ public sealed class MainForm : Form
             AntiDeadzone = (double)_antiDeadzone.Value / 100.0,
             Sensitivity = (double)_sensitivity.Value / 100.0,
             DriftWarning = (double)_driftWarning.Value / 100.0,
-            PollIntervalMs = (int)_pollInterval.Value
+            PollIntervalMs = (int)_pollInterval.Value,
+            AxisCalibrations = _calibration.AxisCalibrations?.ToDictionary(pair => pair.Key, pair => pair.Value.Clone()) ?? new()
         };
         _testView.Calibration = _calibration;
         Interlocked.Increment(ref _runtimeRevision);
@@ -670,6 +876,7 @@ public sealed class MainForm : Form
             var s = joystick.GetCurrentState();
             _diagnostics.RecordInputRead(Stopwatch.GetTimestamp() - readStarted);
             var st = BuildVirtualTestState(s);
+            CaptureRangeSample(st);
             _testView.State = st;
             _testView.Invalidate();
             _visualMapper.State = st;
@@ -739,10 +946,10 @@ public sealed class MainForm : Form
         foreach (var target in new[] { "A", "B", "X", "Y", "LB", "RB", "Back", "Start", "LS", "RS", "DPadUp", "DPadRight", "DPadDown", "DPadLeft" })
             testState.Buttons[target] = InputMapper.GetDigital(input, GetBinding(target));
 
-        testState.LeftX = InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, GetBinding("LeftStickX")), true, _calibration);
-        testState.LeftY = InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, GetBinding("LeftStickY")), true, _calibration);
-        testState.RightX = InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, GetBinding("RightStickX")), false, _calibration);
-        testState.RightY = InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, GetBinding("RightStickY")), false, _calibration);
+        testState.LeftX = InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, GetBinding("LeftStickX")), "LeftStickX", true, _calibration);
+        testState.LeftY = InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, GetBinding("LeftStickY")), "LeftStickY", true, _calibration);
+        testState.RightX = InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, GetBinding("RightStickX")), "RightStickX", false, _calibration);
+        testState.RightY = InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, GetBinding("RightStickY")), "RightStickY", false, _calibration);
         testState.LeftTriggerRaw = InputMapper.GetAnalog(input, GetBinding("LeftTrigger"));
         testState.RightTriggerRaw = InputMapper.GetAnalog(input, GetBinding("RightTrigger"));
         testState.LeftTrigger = InputMapper.CalibrateTrigger(testState.LeftTriggerRaw, _calibration);
@@ -1143,10 +1350,10 @@ public sealed class MainForm : Form
                 case "DPadRight": xbox.SetButtonState(Xbox360Button.Right, InputMapper.GetDigital(input, binding)); break;
                 case "DPadDown": xbox.SetButtonState(Xbox360Button.Down, InputMapper.GetDigital(input, binding)); break;
                 case "DPadLeft": xbox.SetButtonState(Xbox360Button.Left, InputMapper.GetDigital(input, binding)); break;
-                case "LeftStickX": xbox.SetAxisValue(Xbox360Axis.LeftThumbX, AxisToShort(InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, binding), true, calibration))); break;
-                case "LeftStickY": xbox.SetAxisValue(Xbox360Axis.LeftThumbY, AxisToShort(InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, binding), true, calibration))); break;
-                case "RightStickX": xbox.SetAxisValue(Xbox360Axis.RightThumbX, AxisToShort(InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, binding), false, calibration))); break;
-                case "RightStickY": xbox.SetAxisValue(Xbox360Axis.RightThumbY, AxisToShort(InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, binding), false, calibration))); break;
+                case "LeftStickX": xbox.SetAxisValue(Xbox360Axis.LeftThumbX, AxisToShort(InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, binding), "LeftStickX", true, calibration))); break;
+                case "LeftStickY": xbox.SetAxisValue(Xbox360Axis.LeftThumbY, AxisToShort(InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, binding), "LeftStickY", true, calibration))); break;
+                case "RightStickX": xbox.SetAxisValue(Xbox360Axis.RightThumbX, AxisToShort(InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, binding), "RightStickX", false, calibration))); break;
+                case "RightStickY": xbox.SetAxisValue(Xbox360Axis.RightThumbY, AxisToShort(InputMapper.CalibrateAxis(InputMapper.GetAnalog(input, binding), "RightStickY", false, calibration))); break;
                 case "LeftTrigger": xbox.SetSliderValue(Xbox360Slider.LeftTrigger, (byte)InputMapper.CalibrateTrigger(InputMapper.GetAnalog(input, binding), calibration)); break;
                 case "RightTrigger": xbox.SetSliderValue(Xbox360Slider.RightTrigger, (byte)InputMapper.CalibrateTrigger(InputMapper.GetAnalog(input, binding), calibration)); break;
             }

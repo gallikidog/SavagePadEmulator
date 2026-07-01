@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace SavagePadEmu;
 
@@ -21,6 +22,17 @@ public sealed class Binding
     public Binding Clone() => new() { Target = Target, Kind = Kind, Index = Index, Invert = Invert };
 }
 
+
+
+public sealed class AxisCalibration
+{
+    public int Center { get; set; } = 32768;
+    public int Minimum { get; set; } = 0;
+    public int Maximum { get; set; } = 65535;
+
+    public AxisCalibration Clone() => new() { Center = Center, Minimum = Minimum, Maximum = Maximum };
+}
+
 public sealed class CalibrationSettings
 {
     public double LeftStickDeadzone { get; set; } = 0.08;
@@ -30,8 +42,20 @@ public sealed class CalibrationSettings
     public double Sensitivity { get; set; } = 1.00;
     public double DriftWarning { get; set; } = 0.12;
     public int PollIntervalMs { get; set; } = 1;
+    // Values captured by the guided wizard for the mapped stick axes.
+    public Dictionary<string, AxisCalibration> AxisCalibrations { get; set; } = new();
 
-    public CalibrationSettings Clone() => (CalibrationSettings)MemberwiseClone();
+    public CalibrationSettings Clone() => new()
+    {
+        LeftStickDeadzone = LeftStickDeadzone,
+        RightStickDeadzone = RightStickDeadzone,
+        TriggerDeadzone = TriggerDeadzone,
+        AntiDeadzone = AntiDeadzone,
+        Sensitivity = Sensitivity,
+        DriftWarning = DriftWarning,
+        PollIntervalMs = PollIntervalMs,
+        AxisCalibrations = AxisCalibrations?.ToDictionary(pair => pair.Key, pair => pair.Value.Clone()) ?? new()
+    };
 }
 
 public sealed class Profile

@@ -94,9 +94,29 @@ public static class InputMapper
         };
     }
 
-    public static double CalibrateAxis(int value, bool leftStick, CalibrationSettings calibration)
+    public static double CalibrateAxis(int value, bool leftStick, CalibrationSettings calibration) =>
+        CalibrateAxis(value, null, leftStick, calibration);
+
+    public static double CalibrateAxis(int value, string? target, bool leftStick, CalibrationSettings calibration)
     {
-        var normalized = Math.Clamp((value - 32768) / 32767.0, -1.0, 1.0);
+        var center = 32768;
+        var minimum = 0;
+        var maximum = 65535;
+
+        if (!string.IsNullOrWhiteSpace(target) &&
+            calibration.AxisCalibrations is not null &&
+            calibration.AxisCalibrations.TryGetValue(target, out var saved))
+        {
+            center = Math.Clamp(saved.Center, 0, 65535);
+            minimum = Math.Clamp(saved.Minimum, 0, center - 1);
+            maximum = Math.Clamp(saved.Maximum, center + 1, 65535);
+        }
+
+        var normalized = value >= center
+            ? (value - center) / Math.Max(1.0, maximum - center)
+            : (value - center) / Math.Max(1.0, center - minimum);
+        normalized = Math.Clamp(normalized, -1.0, 1.0);
+
         var sign = Math.Sign(normalized);
         var magnitude = Math.Abs(normalized);
         var deadzone = leftStick ? calibration.LeftStickDeadzone : calibration.RightStickDeadzone;
