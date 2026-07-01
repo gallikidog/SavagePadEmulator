@@ -208,18 +208,6 @@ Resultado esperado:
 artifacts\SavagePadEmulator-Setup-1.0.3-win-x64.exe
 ```
 
-## Publicar una versión en GitHub
-
-```powershell
-git add .
-git commit -m "v1.0.3 - Release packaging"
-git push origin main
-
-git tag -a v1.0.3 -m "SavagePadEmulator v1.0.3"
-git push origin v1.0.3
-```
-
-El workflow de GitHub Actions incluido puede preparar los artefactos del release al subir un tag de versión.
 
 ## Tecnologías
 
@@ -237,12 +225,6 @@ Los reportes de errores son más útiles cuando incluyen:
 - modelo del joystick;
 - pasos para reproducir el problema;
 - contenido relevante de `%LOCALAPPDATA%\SavagePadEmu\SavagePadEmu.log`.
-
-## Licencia
-
-Todavía no hay una licencia declarada en el proyecto. Antes de distribuirlo públicamente o aceptar contribuciones externas, agregá un archivo `LICENSE` con la licencia elegida.
-
----
 
 <a id="english"></a>
 
@@ -454,16 +436,6 @@ Expected output:
 artifacts\SavagePadEmulator-Setup-1.0.3-win-x64.exe
 ```
 
-## Publish a GitHub release
-
-```powershell
-git add .
-git commit -m "v1.0.3 - Release packaging"
-git push origin main
-
-git tag -a v1.0.3 -m "SavagePadEmulator v1.0.3"
-git push origin v1.0.3
-```
 
 The included GitHub Actions workflow can prepare release artifacts when you push a version tag.
 
@@ -483,7 +455,3 @@ Bug reports are most useful when they include:
 - controller model;
 - steps to reproduce the problem;
 - relevant content from `%LOCALAPPDATA%\SavagePadEmu\SavagePadEmu.log`.
-
-## License
-
-The project does not currently declare a license. Before public distribution or accepting external contributions, add a `LICENSE` file with the license you choose.
