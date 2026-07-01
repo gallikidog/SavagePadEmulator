@@ -6,6 +6,10 @@ namespace SavagePadEmu;
 
 public sealed class TestPadView : UserControl
 {
+    // UiFont is annotated as nullable in modern .NET.
+    // Keep one non-null fallback font for all drawing calls in this control.
+    private static readonly Font UiFont = SystemFonts.MessageBoxFont ?? new Font("Segoe UI", 9f, FontStyle.Regular, GraphicsUnit.Point);
+
     public VirtualTestState State { get; set; } = new();
     public string Language { get; set; } = "es";
     public CalibrationSettings Calibration { get; set; } = new();
@@ -54,7 +58,7 @@ public sealed class TestPadView : UserControl
         g.DrawString(Language == "en"
             ? "Green dashed circle = configured deadzone · Orange circle = drift warning center"
             : "Círculo verde punteado = deadzone configurada · Círculo naranja = centro para detectar drift",
-            Font, muted, 20, height - 30);
+            UiFont, muted, 20, height - 30);
     }
 
     private bool IsOn(string key) => State.Buttons.TryGetValue(key, out var value) && value;
@@ -73,8 +77,8 @@ public sealed class TestPadView : UserControl
         using var knob = new SolidBrush(ModernTheme.Accent);
         g.FillEllipse(knob, pointX - 11, pointY - 11, 22, 22);
         g.DrawEllipse(Pens.Black, pointX - 11, pointY - 11, 22, 22);
-        g.DrawString(label, SystemFonts.MessageBoxFont, text, centerX - 42, centerY + radius + 8);
-        g.DrawString($"RAW {rawX} / {rawY}", SystemFonts.MessageBoxFont, muted, centerX - 52, centerY + radius + 25);
+        g.DrawString(label, UiFont, text, centerX - 42, centerY + radius + 8);
+        g.DrawString($"RAW {rawX} / {rawY}", UiFont, muted, centerX - 52, centerY + radius + 25);
     }
 
     private void DrawFaceButtons(Graphics g, int centerX, int centerY, Brush text, Brush on, Brush off, Pen outline)
@@ -98,8 +102,8 @@ public sealed class TestPadView : UserControl
         const int radius = 31;
         g.FillEllipse(active ? on : off, centerX - radius, centerY - radius, radius * 2, radius * 2);
         g.DrawEllipse(outline, centerX - radius, centerY - radius, radius * 2, radius * 2);
-        var size = g.MeasureString(label, SystemFonts.MessageBoxFont);
-        g.DrawString(label, SystemFonts.MessageBoxFont, text, centerX - size.Width / 2, centerY - size.Height / 2);
+        var size = g.MeasureString(label, UiFont);
+        g.DrawString(label, UiFont, text, centerX - size.Width / 2, centerY - size.Height / 2);
     }
 
     private static void DrawSmallButton(Graphics g, int centerX, int centerY, string label, bool active, Brush text, Brush on, Brush off, Pen outline)
@@ -107,8 +111,8 @@ public sealed class TestPadView : UserControl
         var rect = new Rectangle(centerX - 28, centerY - 14, 56, 28);
         g.FillRectangle(active ? on : off, rect);
         g.DrawRectangle(outline, rect);
-        var size = g.MeasureString(label, SystemFonts.MessageBoxFont);
-        g.DrawString(label, SystemFonts.MessageBoxFont, text, centerX - size.Width / 2, centerY - size.Height / 2);
+        var size = g.MeasureString(label, UiFont);
+        g.DrawString(label, UiFont, text, centerX - size.Width / 2, centerY - size.Height / 2);
     }
 
     private static void DrawTrigger(Graphics g, int x, int y, int value, string label, Brush text, Pen outline)
@@ -117,6 +121,6 @@ public sealed class TestPadView : UserControl
         g.DrawRectangle(outline, rect);
         using var fill = new SolidBrush(Color.FromArgb(70, 120, 210));
         g.FillRectangle(fill, rect.X + 1, rect.Y + 1, (int)((rect.Width - 2) * (value / 255.0)), rect.Height - 2);
-        g.DrawString($"{label}: {value}", SystemFonts.MessageBoxFont, text, x, y - 20);
+        g.DrawString($"{label}: {value}", UiFont, text, x, y - 20);
     }
 }

@@ -1,14 +1,11 @@
-# SavagePadEmu v0.6.0
+# SavagePadEmu v0.6.1
 
 Windows 11 DirectInput-to-XInput emulator using ViGEmBus.
 
-## New in v0.6.0: Test & Diagnostics
+## New in v0.6.1: Clean build
 
-- Raw and calibrated values for both sticks and triggers.
-- On-screen deadzone circle and drift-center indicator.
-- Input sampling rate (Hz), last input read time, and virtual report rate.
-- Virtual controller connection status.
-- All diagnostic counters are lock-free and add negligible overhead.
+- Removes nullable-font warnings from the Test Pad renderer.
+- Keeps the same runtime behavior and diagnostics as v0.6.0.
 
 ## Build
 
