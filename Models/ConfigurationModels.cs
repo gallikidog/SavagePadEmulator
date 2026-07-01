@@ -65,9 +65,25 @@ public sealed class Profile
     public List<Binding> Bindings { get; set; } = new();
 }
 
+public sealed class GameProfileAssociation
+{
+    public string ExecutablePath { get; set; } = "";
+    public string ProfilePath { get; set; } = "";
+    public bool Enabled { get; set; } = true;
+}
+
 public sealed class AppSettings
 {
     public string Language { get; set; } = "es";
+    public string ActiveProfilePath { get; set; } = "";
+    public List<GameProfileAssociation> GameProfiles { get; set; } = new();
+}
+
+public sealed class ProfileEntry
+{
+    public string Path { get; init; } = "";
+    public string Name { get; init; } = "";
+    public override string ToString() => Name;
 }
 
 public sealed class VirtualTestState

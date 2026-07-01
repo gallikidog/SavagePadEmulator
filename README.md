@@ -1,27 +1,23 @@
-# SavagePadEmu v0.7.0
+# SavagePadEmulator v0.8.0
 
-Windows 11 DirectInput-to-XInput emulator using ViGEmBus.
+## New in v0.8
+- Multiple JSON profiles.
+- Profile selector in **Calibration / Profiles**.
+- Create profiles from the app.
+- Associate a game `.exe` with the current profile.
+- Automatic profile switch when an associated game process is detected.
+- Existing `profile.json` remains supported as the default/legacy profile.
 
-## New in v0.7.0: Guided calibration
+## How to use game profiles
+1. Go to **Calibration / Profiles**.
+2. Create or select a profile and save it.
+3. Click **Associate game .exe...** and choose the game executable.
+4. Keep SavagePadEmulator open. Every 2 seconds it checks for associated game processes and loads the matching profile.
 
-- Guided capture of stick center for the current mapping.
-- Five-second range capture for both sticks.
-- Saves center/minimum/maximum values inside the active JSON profile.
-- Uses captured stick calibration in the virtual Xbox output and Test Pad.
-- Button to reset only the saved stick calibration without deleting mappings or deadzones.
-
-## How to calibrate
-
-1. Select the physical joystick and open **Calibración / Perfiles**.
-2. Leave both sticks untouched and click **1. Capturar centro**.
-3. Click **2. Capturar recorrido (5s)** and move both sticks fully in every direction until it finishes.
-4. The profile is saved automatically.
+Profiles created by the app are stored in the `Profiles` folder next to the executable. Associations and the last active profile are saved in `settings.json`.
 
 ## Build
-
 ```powershell
 dotnet restore
 dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
-
-The executable is in `bin\Release\net8.0-windows\win-x64\publish\`.

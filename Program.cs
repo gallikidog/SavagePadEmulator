@@ -77,6 +77,15 @@ public sealed class MainForm : Form
     private readonly Label _languageLabel = new() { AutoSize = true, Padding = new Padding(16, 7, 8, 0) };
     private readonly Label _help = new() { Dock = DockStyle.Top, Height = 42, Padding = new Padding(12, 8, 12, 4) };
     private string _lang = "es";
+    private readonly ComboBox _profileSelector = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 220 };
+    private readonly Button _newProfile = new() { Width = 110, Height = 32 };
+    private readonly Button _associateGame = new() { Width = 165, Height = 32 };
+    private readonly Button _removeAssociation = new() { Width = 170, Height = 32 };
+    private readonly Label _gameProfileStatus = new() { AutoSize = true, ForeColor = ModernTheme.MutedText, Padding = new Padding(0, 8, 0, 0) };
+    private readonly System.Windows.Forms.Timer _gameWatcherTimer = new() { Interval = 2000 };
+    private AppSettings _appSettings = new();
+    private string _activeProfilePath = "";
+    private bool _updatingProfileSelector;
     private readonly TextBox _log = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Bottom, Height = 108, BorderStyle = BorderStyle.FixedSingle, BackColor = ModernTheme.Surface, ForeColor = ModernTheme.Text, Font = new Font("Consolas", 8.5F) };
     private readonly TableLayoutPanel _mapper = new() { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(16), ColumnCount = 5, BackColor = ModernTheme.Surface };
     private readonly VisualMapperView _visualMapper = new() { Dock = DockStyle.Fill };
@@ -127,7 +136,9 @@ public sealed class MainForm : Form
     private volatile bool _isBinding;
     private bool _isClosing;
 
-    private string ProfilePath => Path.Combine(AppContext.BaseDirectory, "profile.json");
+    private string DefaultProfilePath => Path.Combine(AppContext.BaseDirectory, "profile.json");
+    private string ProfileDirectory => Path.Combine(AppContext.BaseDirectory, "Profiles");
+    private string ProfilePath => string.IsNullOrWhiteSpace(_activeProfilePath) ? DefaultProfilePath : _activeProfilePath;
     private string SettingsPath => Path.Combine(AppContext.BaseDirectory, "settings.json");
 
     private static NumericUpDown Num(decimal value, decimal min, decimal max) => new()
@@ -229,12 +240,18 @@ public sealed class MainForm : Form
         _save.Click += (_, _) => SaveProfile();
         _saveAs.Click += (_, _) => SaveProfileAs();
         _openProfileFolder.Click += (_, _) => OpenProfileFolder();
+        _newProfile.Click += (_, _) => CreateNewProfile();
+        _associateGame.Click += (_, _) => AssociateCurrentProfileWithGame();
+        _removeAssociation.Click += (_, _) => RemoveCurrentProfileAssociation();
+        _profileSelector.SelectedIndexChanged += (_, _) => ProfileSelectionChanged();
+        _gameWatcherTimer.Tick += (_, _) => CheckGameProfileAutoSwitch();
+        _gameWatcherTimer.Start();
         _load.Click += (_, _) => { LoadProfileOrDefaults(forceFile: true); RefreshMapperUi(); };
         _defaults.Click += (_, _) => { lock (_bindingLock) _bindings = TargetCatalog.CreateDefaultBindings(); UpdateRuntimeBindings(); RefreshMapperUi(); Log(T("defaultRestored")); };
         _clearAll.Click += (_, _) => { lock (_bindingLock) _bindings = TargetCatalog.All.Select(t => new Binding { Target = t }).ToList(); UpdateRuntimeBindings(); RefreshMapperUi(); Log(T("mappingCleared")); };
         _testTimer.Tick += (_, _) => UpdateTestPad();
         _testTimer.Start();
-        FormClosing += (_, _) => { _isClosing = true; _testTimer.Stop(); ResetTestJoystick(); StopEmulation(); };
+        FormClosing += (_, _) => { _isClosing = true; _testTimer.Stop(); _gameWatcherTimer.Stop(); ResetTestJoystick(); StopEmulation(); };
     }
 
 
@@ -348,6 +365,19 @@ public sealed class MainForm : Form
         "rangeCapturing" => "Recording range: move both sticks fully in every direction...",
         "rangeCaptured" => "Stick range calibration saved.",
         "axisCalibrationReset" => "Saved stick centers/ranges were reset.",
+        "profileManager" => "Profiles & games",
+        "activeProfile" => "Active profile:",
+        "newProfile" => "New profile...",
+        "associateGame" => "Associate game .exe...",
+        "removeGameAssociation" => "Remove game association",
+        "noGameAssociation" => "No game is associated with this profile.",
+        "gameAssociationSaved" => "Game association saved: ",
+        "gameAssociationRemoved" => "Game association removed.",
+        "profileAutoLoaded" => "Game detected. Loaded profile: ",
+        "profileCreated" => "New profile created: ",
+        "selectGameExe" => "Select the game executable",
+        "selectProfileFirst" => "Save or select a profile first.",
+        "profileLoadErrorFile" => "Could not load profile: ",
 
         _ => key
     } : key switch
@@ -443,6 +473,19 @@ public sealed class MainForm : Form
         "rangeCapturing" => "Grabando recorrido: mové ambos sticks al máximo en todas las direcciones...",
         "rangeCaptured" => "Calibración de recorrido guardada.",
         "axisCalibrationReset" => "Se restauraron los centros/recorridos de sticks.",
+        "profileManager" => "Perfiles y juegos",
+        "activeProfile" => "Perfil activo:",
+        "newProfile" => "Nuevo perfil...",
+        "associateGame" => "Asociar .exe de juego...",
+        "removeGameAssociation" => "Quitar asociación de juego",
+        "noGameAssociation" => "No hay juego asociado a este perfil.",
+        "gameAssociationSaved" => "Asociación de juego guardada: ",
+        "gameAssociationRemoved" => "Asociación de juego eliminada.",
+        "profileAutoLoaded" => "Juego detectado. Perfil cargado: ",
+        "profileCreated" => "Nuevo perfil creado: ",
+        "selectGameExe" => "Seleccioná el ejecutable del juego",
+        "selectProfileFirst" => "Guardá o seleccioná un perfil primero.",
+        "profileLoadErrorFile" => "No se pudo cargar el perfil: ",
 
         _ => key
     });
@@ -461,6 +504,9 @@ public sealed class MainForm : Form
         _clearAll.Text = T("clearAll");
         _saveAs.Text = T("saveAs");
         _openProfileFolder.Text = T("profiles");
+        _newProfile.Text = T("newProfile");
+        _associateGame.Text = T("associateGame");
+        _removeAssociation.Text = T("removeGameAssociation");
         _mapTab.Text = T("mappingTab");
         _testTab.Text = T("testTab");
         _calibrationTab.Text = T("calibrationTab");
@@ -492,18 +538,57 @@ public sealed class MainForm : Form
 
     private void LoadSettings()
     {
-        if (_profileRepository.TryLoadSettings(SettingsPath, out var settings))
-            _lang = settings?.Language == "en" ? "en" : "es";
+        if (_profileRepository.TryLoadSettings(SettingsPath, out var settings) && settings is not null)
+        {
+            _appSettings = settings;
+            _appSettings.GameProfiles ??= new();
+            _lang = settings.Language == "en" ? "en" : "es";
+            _activeProfilePath = string.IsNullOrWhiteSpace(settings.ActiveProfilePath) ? DefaultProfilePath : settings.ActiveProfilePath;
+        }
         else
+        {
+            _appSettings = new AppSettings();
+            _activeProfilePath = DefaultProfilePath;
             _lang = "es";
+        }
+        _language.SelectedIndex = _lang == "en" ? 1 : 0;
     }
 
     private void SaveSettings()
     {
-        try { _profileRepository.SaveSettings(SettingsPath, new AppSettings { Language = _lang }); }
+        try
+        {
+            _appSettings.Language = _lang;
+            _appSettings.ActiveProfilePath = ProfilePath;
+            _appSettings.GameProfiles ??= new();
+            _profileRepository.SaveSettings(SettingsPath, _appSettings);
+        }
         catch { }
     }
 
+
+    private ModernCard BuildProfileManagementCard()
+    {
+        var card = new ModernCard { Dock = DockStyle.Top, Height = 116, Padding = new Padding(18), Margin = new Padding(16) };
+        var title = new Label { Text = T("profileManager"), Dock = DockStyle.Top, Height = 24, Font = new Font("Segoe UI Semibold", 10F), ForeColor = ModernTheme.Text };
+        var row = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 42, Padding = new Padding(0, 4, 0, 0), WrapContents = false };
+        row.Controls.Add(new Label { Text = T("activeProfile"), AutoSize = true, Padding = new Padding(0, 8, 8, 0), ForeColor = ModernTheme.Text });
+        ModernTheme.StyleInput(_profileSelector);
+        ModernTheme.StyleSecondaryButton(_newProfile);
+        ModernTheme.StylePrimaryButton(_associateGame);
+        ModernTheme.StyleSecondaryButton(_removeAssociation);
+        row.Controls.Add(_profileSelector);
+        row.Controls.Add(_newProfile);
+        row.Controls.Add(_associateGame);
+        row.Controls.Add(_removeAssociation);
+        card.Controls.Add(_gameProfileStatus);
+        _gameProfileStatus.Dock = DockStyle.Bottom;
+        card.Controls.Add(row);
+        card.Controls.Add(title);
+        RefreshProfileSelector();
+        RefreshGameAssociationStatus();
+        return card;
+    }
 
     private void BuildCalibrationPanel()
     {
@@ -575,8 +660,10 @@ public sealed class MainForm : Form
         panel.Controls.Add(apply, 1, 7);
         card.Controls.Add(panel);
 
+        var profilesCard = BuildProfileManagementCard();
         _calibrationTab.Controls.Add(card);
         _calibrationTab.Controls.Add(wizardCard);
+        _calibrationTab.Controls.Add(profilesCard);
         _calibrationTab.Controls.Add(_calibrationHelp);
         UpdateCalibrationWizardText();
     }
@@ -1134,35 +1221,152 @@ public sealed class MainForm : Form
         ApplyCalibrationFromUi();
         List<Binding> copy;
         lock (_bindingLock) copy = TargetCatalog.Normalize(_bindings);
-        _profileRepository.SaveProfile(ProfilePath, new Profile { Name = "Default", Calibration = _calibration.Clone(), Bindings = copy });
+        var profile = new Profile { Name = Path.GetFileNameWithoutExtension(ProfilePath), Calibration = _calibration.Clone(), Bindings = copy };
+        _profileRepository.SaveProfile(ProfilePath, profile);
+        SaveSettings();
+        RefreshProfileSelector();
         Log(T("profileSaved"));
     }
 
     private void SaveProfileAs()
     {
         ApplyCalibrationFromUi();
+        Directory.CreateDirectory(ProfileDirectory);
         using var dialog = new SaveFileDialog
         {
             Filter = "SavagePadEmu profile (*.json)|*.json|JSON (*.json)|*.json",
             FileName = "profile.json",
-            InitialDirectory = AppContext.BaseDirectory
+            InitialDirectory = ProfileDirectory
         };
         if (dialog.ShowDialog(this) != DialogResult.OK) return;
-
-        List<Binding> copy;
-        lock (_bindingLock) copy = TargetCatalog.Normalize(_bindings);
-        _profileRepository.SaveProfile(dialog.FileName, new Profile
-        {
-            Name = Path.GetFileNameWithoutExtension(dialog.FileName),
-            Calibration = _calibration.Clone(),
-            Bindings = copy
-        });
+        _activeProfilePath = dialog.FileName;
+        SaveProfile();
         Log(T("profileSavedAs") + dialog.FileName);
+    }
+
+    private void CreateNewProfile()
+    {
+        Directory.CreateDirectory(ProfileDirectory);
+        using var dialog = new SaveFileDialog
+        {
+            Filter = "SavagePadEmu profile (*.json)|*.json",
+            FileName = "New profile.json",
+            InitialDirectory = ProfileDirectory,
+            Title = T("newProfile")
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        _activeProfilePath = dialog.FileName;
+        SaveProfile();
+        RefreshProfileSelector();
+        Log(T("profileCreated") + Path.GetFileNameWithoutExtension(_activeProfilePath));
     }
 
     private void OpenProfileFolder()
     {
-        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = AppContext.BaseDirectory, UseShellExecute = true }); } catch { }
+        try
+        {
+            Directory.CreateDirectory(ProfileDirectory);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = ProfileDirectory, UseShellExecute = true });
+        }
+        catch { }
+    }
+
+    private void RefreshProfileSelector()
+    {
+        if (_updatingProfileSelector) return;
+        _updatingProfileSelector = true;
+        try
+        {
+            Directory.CreateDirectory(ProfileDirectory);
+            var entries = new List<ProfileEntry>();
+            if (File.Exists(DefaultProfilePath)) entries.Add(new ProfileEntry { Path = DefaultProfilePath, Name = "Default" });
+            entries.AddRange(Directory.EnumerateFiles(ProfileDirectory, "*.json", SearchOption.TopDirectoryOnly)
+                .OrderBy(path => Path.GetFileNameWithoutExtension(path), StringComparer.CurrentCultureIgnoreCase)
+                .Select(path => new ProfileEntry { Path = path, Name = Path.GetFileNameWithoutExtension(path) }));
+            if (!entries.Any(entry => string.Equals(entry.Path, ProfilePath, StringComparison.OrdinalIgnoreCase)))
+                entries.Insert(0, new ProfileEntry { Path = ProfilePath, Name = Path.GetFileNameWithoutExtension(ProfilePath) });
+            _profileSelector.Items.Clear();
+            foreach (var entry in entries) _profileSelector.Items.Add(entry);
+            var index = entries.FindIndex(entry => string.Equals(entry.Path, ProfilePath, StringComparison.OrdinalIgnoreCase));
+            _profileSelector.SelectedIndex = Math.Max(0, index);
+        }
+        finally { _updatingProfileSelector = false; }
+    }
+
+    private void ProfileSelectionChanged()
+    {
+        if (_updatingProfileSelector || _profileSelector.SelectedItem is not ProfileEntry entry) return;
+        if (string.Equals(entry.Path, ProfilePath, StringComparison.OrdinalIgnoreCase)) return;
+        SaveProfile();
+        LoadProfileFromPath(entry.Path, showError: true);
+    }
+
+    private void LoadProfileFromPath(string path, bool showError = false)
+    {
+        if (!_profileRepository.TryLoadProfile(path, out var profile, out var error) || profile?.Bindings.Count <= 0)
+        {
+            if (error is not null) Log(T("profileLoadErrorFile") + error.Message);
+            if (showError) MessageBox.Show(T("profileLoadErrorFile") + Path.GetFileName(path), "SavagePadEmu", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        _activeProfilePath = path;
+        lock (_bindingLock) _bindings = TargetCatalog.Normalize(profile.Bindings);
+        _calibration = profile.Calibration ?? new CalibrationSettings();
+        RefreshCalibrationUi();
+        ApplyCalibrationFromUi();
+        UpdateRuntimeBindings();
+        RefreshMapperUi();
+        RefreshProfileSelector();
+        RefreshGameAssociationStatus();
+        SaveSettings();
+        Log(T("profileLoaded"));
+    }
+
+    private void AssociateCurrentProfileWithGame()
+    {
+        SaveProfile();
+        using var dialog = new OpenFileDialog { Filter = "Executable (*.exe)|*.exe", Title = T("selectGameExe") };
+        if (dialog.ShowDialog(this) != DialogResult.OK) return;
+        var fullPath = Path.GetFullPath(dialog.FileName);
+        _appSettings.GameProfiles.RemoveAll(item => string.Equals(item.ExecutablePath, fullPath, StringComparison.OrdinalIgnoreCase));
+        _appSettings.GameProfiles.Add(new GameProfileAssociation { ExecutablePath = fullPath, ProfilePath = ProfilePath, Enabled = true });
+        SaveSettings();
+        RefreshGameAssociationStatus();
+        Log(T("gameAssociationSaved") + Path.GetFileName(fullPath));
+    }
+
+    private void RemoveCurrentProfileAssociation()
+    {
+        var removed = _appSettings.GameProfiles.RemoveAll(item => string.Equals(item.ProfilePath, ProfilePath, StringComparison.OrdinalIgnoreCase));
+        if (removed > 0) { SaveSettings(); Log(T("gameAssociationRemoved")); }
+        else Log(T("noGameAssociation"));
+        RefreshGameAssociationStatus();
+    }
+
+    private void RefreshGameAssociationStatus()
+    {
+        var games = _appSettings.GameProfiles.Where(item => string.Equals(item.ProfilePath, ProfilePath, StringComparison.OrdinalIgnoreCase))
+            .Select(item => Path.GetFileName(item.ExecutablePath)).ToArray();
+        _gameProfileStatus.Text = games.Length == 0 ? T("noGameAssociation") : string.Join(" • ", games);
+    }
+
+    private void CheckGameProfileAutoSwitch()
+    {
+        if (_isClosing || _isBinding || _appSettings.GameProfiles.Count == 0) return;
+        foreach (var association in _appSettings.GameProfiles.Where(item => item.Enabled && File.Exists(item.ProfilePath)))
+        {
+            var processName = Path.GetFileNameWithoutExtension(association.ExecutablePath);
+            if (string.IsNullOrWhiteSpace(processName)) continue;
+            try
+            {
+                if (System.Diagnostics.Process.GetProcessesByName(processName).Length == 0) continue;
+                if (string.Equals(association.ProfilePath, ProfilePath, StringComparison.OrdinalIgnoreCase)) return;
+                LoadProfileFromPath(association.ProfilePath);
+                Log(T("profileAutoLoaded") + Path.GetFileNameWithoutExtension(association.ProfilePath));
+                return;
+            }
+            catch { }
+        }
     }
 
     private void UpdateRuntimeBindings()
@@ -1174,22 +1378,23 @@ public sealed class MainForm : Form
 
     private void LoadProfileOrDefaults(bool forceFile = false)
     {
-        if (_profileRepository.TryLoadProfile(ProfilePath, out var profile, out var error) && profile?.Bindings.Count > 0)
+        var path = ProfilePath;
+        if (_profileRepository.TryLoadProfile(path, out var profile, out var error) && profile?.Bindings.Count > 0)
         {
             lock (_bindingLock) _bindings = TargetCatalog.Normalize(profile.Bindings);
             _calibration = profile.Calibration ?? new CalibrationSettings();
             RefreshCalibrationUi();
             ApplyCalibrationFromUi();
             UpdateRuntimeBindings();
-            Log(T("profileLoaded"));
+            RefreshProfileSelector();
             return;
         }
-
         if (error is not null) Log(T("profileLoadError") + error.Message);
         if (forceFile) MessageBox.Show(T("profileMissing"), "SavagePadEmu");
         lock (_bindingLock) _bindings = TargetCatalog.CreateDefaultBindings();
         _calibration ??= new CalibrationSettings();
         UpdateRuntimeBindings();
+        RefreshProfileSelector();
     }
 
     private void RefreshDevices()
