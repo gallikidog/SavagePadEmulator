@@ -1,17 +1,15 @@
-# SavagePadEmu v0.4.0
+# SavagePadEmu v0.5.0
 
 Emulador de joystick Xbox 360 virtual para Windows 11, basado en ViGEmBus y DirectInput.
 
-## v0.4.0 — Interfaz moderna
+## v0.5.0 — Mapeo visual
 
-- Interfaz renovada con estilo visual moderno y consistente.
-- Encabezado de aplicación con identidad SavagePad y controles ordenados.
-- Pestañas personalizadas para **Mapeo**, **Test / Drift** y **Calibración / Perfiles**.
-- Botones primarios, secundarios y de detener con estados visuales claros.
-- Filas de mapeo más legibles: control virtual, entrada asignada, Bind, invertir y limpiar.
-- Paneles de calibración y diagnóstico organizados como tarjetas.
-- Test Pad con paleta visual más clara y botones activos resaltados.
-- No cambia el motor de emulación ni la lógica de perfiles de v0.3.0.
+- Diagrama interactivo de mando Xbox / PlayStation dentro de la pestaña **Mapeo**.
+- Hacé clic sobre A/✕, B/○, X/□, Y/△, D-Pad, bumpers, triggers, Share o Options para asignar la entrada física.
+- El diagrama refleja botones, gatillos y sticks en tiempo real usando el perfil y las deadzones activas.
+- Cada control visual muestra la entrada asignada (`Button 2`, `Axis 0+`, etc.).
+- Se mantiene la tabla detallada para configurar ejes individuales, inversión y limpiar asignaciones.
+- No cambia el motor de emulación ni los perfiles existentes.
 
 ## Requisitos
 
@@ -35,7 +33,7 @@ bin\Release\net8.0-windows\win-x64\publish\SavagePadEmu.exe
 ## Uso
 
 1. Seleccioná el joystick físico.
-2. Configurá los binds y guardá el perfil.
-3. Probá sticks/botones en **Test / Drift** antes de iniciar emulación.
-4. Ajustá deadzones y polling en **Calibración / Perfiles**.
-5. Iniciá emulación.
+2. En **Mapeo**, hacé clic en un control gráfico o en `Bind / Set key`.
+3. Presioná o mové la entrada física deseada.
+4. Probá el resultado en **Test / Drift**.
+5. Guardá el perfil e iniciá emulación.

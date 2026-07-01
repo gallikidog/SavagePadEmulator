@@ -44,6 +44,7 @@ public sealed class MainForm : Form
     private string _lang = "es";
     private readonly TextBox _log = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Bottom, Height = 108, BorderStyle = BorderStyle.FixedSingle, BackColor = ModernTheme.Surface, ForeColor = ModernTheme.Text, Font = new Font("Consolas", 8.5F) };
     private readonly TableLayoutPanel _mapper = new() { Dock = DockStyle.Fill, AutoScroll = true, Padding = new Padding(16), ColumnCount = 5, BackColor = ModernTheme.Surface };
+    private readonly VisualMapperView _visualMapper = new() { Dock = DockStyle.Fill };
     private readonly ModernTabControl _tabs = new() { Dock = DockStyle.Fill, BackColor = ModernTheme.AppBackground };
     private readonly TabPage _mapTab = new() { Text = "Mapeo", BackColor = ModernTheme.Surface };
     private readonly TabPage _testTab = new() { Text = "Test / Drift", BackColor = ModernTheme.AppBackground };
@@ -155,7 +156,7 @@ public sealed class MainForm : Form
         top.Controls.Add(_status);
 
 
-        _mapTab.Controls.Add(_mapper);
+        BuildMappingPanel();
         BuildTestPanel();
         BuildCalibrationPanel();
         _tabs.TabPages.Add(_mapTab);
@@ -394,6 +395,8 @@ public sealed class MainForm : Form
         RefreshMapperUi();
         _testView.Language = _lang;
         _testView.Invalidate();
+        _visualMapper.Language = _lang;
+        _visualMapper.Invalidate();
     }
 
     private void LanguageChanged(object? sender, EventArgs e)
@@ -495,6 +498,31 @@ public sealed class MainForm : Form
         Interlocked.Increment(ref _runtimeRevision);
     }
 
+    private void BuildMappingPanel()
+    {
+        _mapTab.Controls.Clear();
+        var split = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            SplitterDistance = 480,
+            BackColor = ModernTheme.AppBackground,
+            Panel1MinSize = 400,
+            Panel2MinSize = 390
+        };
+        var visualCard = new ModernCard { Dock = DockStyle.Fill, Margin = new Padding(12), Padding = new Padding(8) };
+        visualCard.Controls.Add(_visualMapper);
+        split.Panel1.Controls.Add(visualCard);
+        split.Panel2.Controls.Add(_mapper);
+        _mapTab.Controls.Add(split);
+        _visualMapper.BindRequested -= VisualMapperBindRequested;
+        _visualMapper.BindRequested += VisualMapperBindRequested;
+    }
+
+    private async void VisualMapperBindRequested(object? sender, string target)
+    {
+        await BindTargetAsync(target);
+    }
+
     private void BuildTestPanel()
     {
         _testTab.Controls.Clear();
@@ -565,6 +593,8 @@ public sealed class MainForm : Form
             var st = BuildVirtualTestState(s);
             _testView.State = st;
             _testView.Invalidate();
+            _visualMapper.State = st;
+            _visualMapper.Invalidate();
 
             SetTestText("LeftStick", $"{st.LeftX:+0.000;-0.000;0.000} / {st.LeftY:+0.000;-0.000;0.000}");
             SetTestText("RightStick", $"{st.RightX:+0.000;-0.000;0.000} / {st.RightY:+0.000;-0.000;0.000}");
@@ -761,6 +791,10 @@ public sealed class MainForm : Form
                 chk.CheckedChanged += InvertChangedDummy;
             }
         }
+
+        Binding[] copy;
+        lock (_bindingLock) copy = _bindings.Select(b => b.Clone()).ToArray();
+        _visualMapper.SetBindings(copy);
     }
 
     private void InvertChangedDummy(object? sender, EventArgs e)
