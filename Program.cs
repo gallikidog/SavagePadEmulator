@@ -19,8 +19,43 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
+        var logPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "SavagePadEmu",
+            "startup-error.log");
+
+        void Report(Exception ex)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+                File.AppendAllText(logPath, $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {ex}\r\n\r\n");
+            }
+            catch { }
+
+            MessageBox.Show(
+                "SavagePadEmu could not start.\n\n" + ex.Message +
+                "\n\nA detailed log was saved to:\n" + logPath,
+                "SavagePadEmu - Startup error",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+
         ApplicationConfiguration.Initialize();
-        Application.Run(new MainForm());
+        Application.ThreadException += (_, e) => Report(e.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            if (e.ExceptionObject is Exception ex) Report(ex);
+        };
+
+        try
+        {
+            Application.Run(new MainForm());
+        }
+        catch (Exception ex)
+        {
+            Report(ex);
+        }
     }
 }
 
@@ -666,6 +701,9 @@ public sealed class MainForm : Form
     {
         _mapper.SuspendLayout();
         _mapper.Controls.Clear();
+        _bindingLabels.Clear();
+        _invertChecks.Clear();
+        _bindButtons.Clear();
         _mapper.RowStyles.Clear();
         _mapper.ColumnStyles.Clear();
         _mapper.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));

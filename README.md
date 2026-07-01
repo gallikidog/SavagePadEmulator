@@ -37,3 +37,7 @@ bin\Release\net8.0-windows\win-x64\publish\SavagePadEmu.exe
 3. Presioná o mové la entrada física deseada.
 4. Probá el resultado en **Test / Drift**.
 5. Guardá el perfil e iniciá emulación.
+
+## v0.5.1 startup diagnostics
+If the app cannot open, it now shows the exact startup error and writes a detailed log to:
+`%LOCALAPPDATA%\SavagePadEmu\startup-error.log`

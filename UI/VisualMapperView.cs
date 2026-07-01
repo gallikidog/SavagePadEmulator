@@ -40,6 +40,8 @@ public sealed class VisualMapperView : Control
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
+        try
+        {
         var g = e.Graphics;
         g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
         _hotspots.Clear();
@@ -84,6 +86,14 @@ public sealed class VisualMapperView : Control
                 var size = g.MeasureString(value, Font);
                 g.DrawString(value, Font, muted, pair.Value.Left + (pair.Value.Width-size.Width)/2f, pair.Value.Bottom+2);
             }
+    }
+
+        }
+        catch (Exception ex)
+        {
+            using var brush = new SolidBrush(Color.Firebrick);
+            e.Graphics.DrawString("Visual Mapper error: " + ex.Message, Font, brush, new PointF(12, 12));
+        }
     }
 
     private bool IsOn(string target) => State.Buttons.TryGetValue(target, out var on) && on;
