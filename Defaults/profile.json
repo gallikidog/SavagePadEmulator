@@ -1,0 +1,158 @@
+{
+  "Name": "Default",
+  "Calibration": {
+    "LeftStickDeadzone": 0.08,
+    "RightStickDeadzone": 0.08,
+    "TriggerDeadzone": 0.05,
+    "AntiDeadzone": 0,
+    "Sensitivity": 1,
+    "DriftWarning": 0.12,
+    "PollIntervalMs": 1,
+    "StickResponseCurve": 0,
+    "TriggerResponseCurve": 0,
+    "AxisCalibrations": {
+      "LeftStickX": {
+        "Center": 32768,
+        "Minimum": 0,
+        "Maximum": 65535
+      },
+      "LeftStickY": {
+        "Center": 32767,
+        "Minimum": 0,
+        "Maximum": 65535
+      },
+      "RightStickX": {
+        "Center": 32768,
+        "Minimum": 0,
+        "Maximum": 65535
+      },
+      "RightStickY": {
+        "Center": 32767,
+        "Minimum": 0,
+        "Maximum": 65535
+      }
+    }
+  },
+  "Bindings": [
+    {
+      "Target": "A",
+      "Kind": 1,
+      "Index": 2,
+      "Invert": false
+    },
+    {
+      "Target": "B",
+      "Kind": 1,
+      "Index": 1,
+      "Invert": false
+    },
+    {
+      "Target": "X",
+      "Kind": 1,
+      "Index": 3,
+      "Invert": false
+    },
+    {
+      "Target": "Y",
+      "Kind": 1,
+      "Index": 0,
+      "Invert": false
+    },
+    {
+      "Target": "LB",
+      "Kind": 1,
+      "Index": 4,
+      "Invert": false
+    },
+    {
+      "Target": "RB",
+      "Kind": 1,
+      "Index": 5,
+      "Invert": false
+    },
+    {
+      "Target": "Back",
+      "Kind": 1,
+      "Index": 8,
+      "Invert": false
+    },
+    {
+      "Target": "Start",
+      "Kind": 1,
+      "Index": 9,
+      "Invert": false
+    },
+    {
+      "Target": "LS",
+      "Kind": 1,
+      "Index": 10,
+      "Invert": false
+    },
+    {
+      "Target": "RS",
+      "Kind": 1,
+      "Index": 11,
+      "Invert": false
+    },
+    {
+      "Target": "DPadUp",
+      "Kind": 3,
+      "Index": 0,
+      "Invert": false
+    },
+    {
+      "Target": "DPadRight",
+      "Kind": 3,
+      "Index": 1,
+      "Invert": false
+    },
+    {
+      "Target": "DPadDown",
+      "Kind": 3,
+      "Index": 2,
+      "Invert": false
+    },
+    {
+      "Target": "DPadLeft",
+      "Kind": 3,
+      "Index": 3,
+      "Invert": false
+    },
+    {
+      "Target": "LeftStickX",
+      "Kind": 2,
+      "Index": 0,
+      "Invert": false
+    },
+    {
+      "Target": "LeftStickY",
+      "Kind": 2,
+      "Index": 1,
+      "Invert": true
+    },
+    {
+      "Target": "RightStickX",
+      "Kind": 2,
+      "Index": 2,
+      "Invert": false
+    },
+    {
+      "Target": "RightStickY",
+      "Kind": 2,
+      "Index": 5,
+      "Invert": true
+    },
+    {
+      "Target": "LeftTrigger",
+      "Kind": 1,
+      "Index": 6,
+      "Invert": false
+    },
+    {
+      "Target": "RightTrigger",
+      "Kind": 1,
+      "Index": 7,
+      "Invert": false
+    }
+  ]
+}

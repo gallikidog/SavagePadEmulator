@@ -64,6 +64,8 @@ public sealed class MainForm : Form
     private readonly ComboBox _devices = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 420 };
     private readonly ComboBox _language = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 135 };
     private readonly Button _refresh = new() { Text = "Actualizar", Width = 100 };
+    private readonly CheckBox _useAllConnectedDevices = new() { AutoSize = true, Padding = new Padding(8, 6, 0, 0) };
+    private readonly System.Windows.Forms.Timer _deviceWatchTimer = new() { Interval = 1200 };
     private readonly Button _start = new() { Text = "Iniciar emulación", Width = 140 };
     private readonly Button _stop = new() { Text = "Detener", Width = 100, Enabled = false };
     private readonly Button _save = new() { Text = "Guardar perfil", Width = 115 };
@@ -110,6 +112,9 @@ public sealed class MainForm : Form
     private readonly NumericUpDown _sensitivity = Num(100, 25, 200);
     private readonly NumericUpDown _driftWarning = Num(12, 1, 50);
     private readonly NumericUpDown _pollInterval = Num(1, 1, 16);
+    private readonly ComboBox _stickCurve = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 120 };
+    private readonly ComboBox _triggerCurve = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 120 };
+    private readonly Button _autoDeadzone = new() { Width = 180, Height = 32 };
     private readonly Label _calibrationHelp = new() { Dock = DockStyle.Top, Height = 58, Padding = new Padding(12, 8, 12, 4) };
     private readonly Label _wizardStatus = new() { AutoSize = true, ForeColor = ModernTheme.MutedText, Padding = new Padding(0, 8, 0, 0) };
     private readonly Button _captureCenter = new() { Width = 150, Height = 32 };
@@ -123,6 +128,7 @@ public sealed class MainForm : Form
     private int _runtimeRevision;
 
     private readonly ProfileRepository _profileRepository = new();
+    private readonly AppLogger _fileLogger;
     private readonly Dictionary<string, Label> _bindingLabels = new();
     private readonly Dictionary<string, CheckBox> _invertChecks = new();
     private readonly Dictionary<string, Button> _bindButtons = new();
@@ -165,6 +171,7 @@ public sealed class MainForm : Form
         MinimumSize = new System.Drawing.Size(940, 650);
         Font = new Font("Segoe UI", 9F);
         BackColor = ModernTheme.AppBackground;
+        _fileLogger = new AppLogger(AppDataDirectory);
 
         var header = new ModernCard { Dock = DockStyle.Top, Height = 116, Padding = new Padding(16, 12, 16, 8) };
         var brand = new Label
@@ -199,6 +206,9 @@ public sealed class MainForm : Form
         top.Controls.Add(_deviceLabel);
         top.Controls.Add(_devices);
         top.Controls.Add(_refresh);
+        _useAllConnectedDevices.Text = T("allDevices");
+        ModernTheme.StyleInput(_useAllConnectedDevices);
+        top.Controls.Add(_useAllConnectedDevices);
         top.Controls.Add(_languageLabel);
         _language.Items.AddRange(new object[] { "Español", "English" });
         top.Controls.Add(_language);
@@ -237,6 +247,8 @@ public sealed class MainForm : Form
         UpdateRuntimeBindings();
         RefreshMapperUi();
         RefreshDevices();
+        _deviceWatchTimer.Tick += (_, _) => RefreshDevices(preserveSelection: true);
+        _deviceWatchTimer.Start();
 
         _refresh.Click += (_, _) => RefreshDevices();
         _language.SelectedIndexChanged += LanguageChanged;
@@ -253,11 +265,11 @@ public sealed class MainForm : Form
         _gameWatcherTimer.Tick += (_, _) => CheckGameProfileAutoSwitch();
         _gameWatcherTimer.Start();
         _load.Click += (_, _) => BrowseAndLoadProfile();
-        _defaults.Click += (_, _) => { lock (_bindingLock) _bindings = TargetCatalog.CreateDefaultBindings(); UpdateRuntimeBindings(); RefreshMapperUi(); Log(T("defaultRestored")); };
+        _defaults.Click += (_, _) => { var defaultProfile = DefaultProfileFactory.Create(); lock (_bindingLock) _bindings = TargetCatalog.Normalize(defaultProfile.Bindings); _calibration = defaultProfile.Calibration; RefreshCalibrationUi(); ApplyCalibrationFromUi(); UpdateRuntimeBindings(); RefreshMapperUi(); Log(T("defaultRestored")); };
         _clearAll.Click += (_, _) => { lock (_bindingLock) _bindings = TargetCatalog.All.Select(t => new Binding { Target = t }).ToList(); UpdateRuntimeBindings(); RefreshMapperUi(); Log(T("mappingCleared")); };
         _testTimer.Tick += (_, _) => UpdateTestPad();
         _testTimer.Start();
-        FormClosing += (_, _) => { _isClosing = true; _testTimer.Stop(); _gameWatcherTimer.Stop(); ResetTestJoystick(); StopEmulation(); };
+        FormClosing += (_, _) => { _isClosing = true; _testTimer.Stop(); _gameWatcherTimer.Stop(); _deviceWatchTimer.Stop(); ResetTestJoystick(); StopEmulation(); };
     }
 
 
@@ -265,6 +277,7 @@ public sealed class MainForm : Form
     {
         ModernTheme.StyleInput(_devices);
         ModernTheme.StyleInput(_language);
+        ModernTheme.StyleInput(_useAllConnectedDevices);
         ModernTheme.StylePrimaryButton(_start);
         ModernTheme.StyleDangerButton(_stop);
         foreach (var button in new[] { _refresh, _save, _load, _defaults, _clearAll, _saveAs, _openProfileFolder })
@@ -384,6 +397,18 @@ public sealed class MainForm : Form
         "selectGameExe" => "Select the game executable",
         "selectProfileFirst" => "Save or select a profile first.",
         "profileLoadErrorFile" => "Could not load profile: ",
+        "allDevices" => "Use all connected devices",
+        "stickCurve" => "Stick response curve",
+        "triggerCurve" => "Trigger response curve",
+        "autoDeadzone" => "Auto-detect deadzone",
+        "curveLinear" => "Linear",
+        "curvePrecision" => "Precision",
+        "curveAggressive" => "Aggressive",
+        "curveSmooth" => "Smooth",
+        "autoDeadzoneStarted" => "Measuring stick noise. Keep both sticks centered...",
+        "autoDeadzoneSaved" => "Recommended deadzones were applied and saved.",
+        "deviceDisconnected" => "Selected joystick was disconnected. Emulation stopped.",
+        "multiDeviceActive" => "Combined input from connected devices is enabled.",
 
         _ => key
     } : key switch
@@ -492,6 +517,18 @@ public sealed class MainForm : Form
         "selectGameExe" => "Seleccioná el ejecutable del juego",
         "selectProfileFirst" => "Guardá o seleccioná un perfil primero.",
         "profileLoadErrorFile" => "No se pudo cargar el perfil: ",
+        "allDevices" => "Usar todos los joysticks conectados",
+        "stickCurve" => "Curva de respuesta sticks",
+        "triggerCurve" => "Curva de respuesta gatillos",
+        "autoDeadzone" => "Detectar deadzone automática",
+        "curveLinear" => "Lineal",
+        "curvePrecision" => "Precisión",
+        "curveAggressive" => "Agresiva",
+        "curveSmooth" => "Suave",
+        "autoDeadzoneStarted" => "Midiendo ruido de sticks. Dejá ambos sticks centrados...",
+        "autoDeadzoneSaved" => "Deadzones recomendadas aplicadas y guardadas.",
+        "deviceDisconnected" => "El joystick seleccionado se desconectó. Emulación detenida.",
+        "multiDeviceActive" => "Entrada combinada de joysticks conectados activada.",
 
         _ => key
     });
@@ -501,6 +538,7 @@ public sealed class MainForm : Form
         Text = T("title");
         _deviceLabel.Text = T("device");
         _languageLabel.Text = T("language");
+        _useAllConnectedDevices.Text = T("allDevices");
         _refresh.Text = T("refresh");
         _start.Text = T("start");
         _stop.Text = T("stop");
@@ -676,14 +714,14 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Top,
             Padding = new Padding(18),
-            Height = 330,
+            Height = 420,
             Margin = new Padding(16)
         };
         var panel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 3,
-            RowCount = 8,
+            RowCount = 11,
             BackColor = ModernTheme.Surface
         };
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 260));
@@ -696,10 +734,17 @@ public sealed class MainForm : Form
         AddCalibrationRow(panel, 4, T("sensitivity"), _sensitivity, T("hintSens"));
         AddCalibrationRow(panel, 5, T("driftWarningValue"), _driftWarning, T("hintDrift"));
         AddCalibrationRow(panel, 6, T("pollInterval"), _pollInterval, T("hintPoll"));
+        AddCurveRow(panel, 7, T("stickCurve"), _stickCurve);
+        AddCurveRow(panel, 8, T("triggerCurve"), _triggerCurve);
+        _autoDeadzone.Text = T("autoDeadzone");
+        ModernTheme.StyleSecondaryButton(_autoDeadzone);
+        _autoDeadzone.Click -= AutoDeadzoneClicked;
+        _autoDeadzone.Click += AutoDeadzoneClicked;
+        panel.Controls.Add(_autoDeadzone, 1, 9);
         var apply = new Button { Text = _lang == "en" ? "Apply" : "Aplicar", Width = 120, Height = 32 };
         ModernTheme.StylePrimaryButton(apply);
         apply.Click += (_, _) => { ApplyCalibrationFromUi(); SaveProfile(); Log(T("settingsApplied")); };
-        panel.Controls.Add(apply, 1, 7);
+        panel.Controls.Add(apply, 1, 10);
         card.Controls.Add(panel);
 
         var profilesCard = BuildProfileManagementCard();
@@ -717,6 +762,66 @@ public sealed class MainForm : Form
         ModernTheme.StyleInput(control);
         panel.Controls.Add(control, 1, row);
         panel.Controls.Add(new Label { Text = hint, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = ModernTheme.MutedText }, 2, row);
+    }
+
+    private void AddCurveRow(TableLayoutPanel panel, int row, string label, ComboBox control)
+    {
+        panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        panel.Controls.Add(new Label { Text = label, Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, ForeColor = ModernTheme.Text }, 0, row);
+        control.Items.Clear();
+        control.Items.AddRange(new object[] { T("curveLinear"), T("curvePrecision"), T("curveAggressive"), T("curveSmooth") });
+        ModernTheme.StyleInput(control);
+        panel.Controls.Add(control, 1, row);
+    }
+
+    private static ResponseCurve SelectedCurve(ComboBox control) => control.SelectedIndex switch
+    {
+        1 => ResponseCurve.Precision,
+        2 => ResponseCurve.Aggressive,
+        3 => ResponseCurve.Smooth,
+        _ => ResponseCurve.Linear
+    };
+
+    private static void SetCurveSelection(ComboBox control, ResponseCurve curve)
+    {
+        if (control.Items.Count == 0) return;
+        control.SelectedIndex = curve switch
+        {
+            ResponseCurve.Precision => 1,
+            ResponseCurve.Aggressive => 2,
+            ResponseCurve.Smooth => 3,
+            _ => 0
+        };
+    }
+
+    private async void AutoDeadzoneClicked(object? sender, EventArgs e)
+    {
+        _autoDeadzone.Enabled = false;
+        _wizardStatus.Text = T("autoDeadzoneStarted");
+        Log(T("autoDeadzoneStarted"));
+
+        var maxLeft = 0.0;
+        var maxRight = 0.0;
+        var end = DateTime.UtcNow.AddSeconds(1.5);
+        while (DateTime.UtcNow < end && !_isClosing)
+        {
+            if (TryGetCurrentTestState(out var state))
+            {
+                var left = Math.Sqrt(Math.Pow((state.LeftXRaw - 32768) / 32767.0, 2) + Math.Pow((state.LeftYRaw - 32768) / 32767.0, 2));
+                var right = Math.Sqrt(Math.Pow((state.RightXRaw - 32768) / 32767.0, 2) + Math.Pow((state.RightYRaw - 32768) / 32767.0, 2));
+                maxLeft = Math.Max(maxLeft, left);
+                maxRight = Math.Max(maxRight, right);
+            }
+            await Task.Delay(20);
+        }
+
+        _leftDeadzone.Value = (decimal)Math.Clamp(Math.Ceiling((maxLeft * 1.35 + 0.01) * 100.0), 2, 30);
+        _rightDeadzone.Value = (decimal)Math.Clamp(Math.Ceiling((maxRight * 1.35 + 0.01) * 100.0), 2, 30);
+        ApplyCalibrationFromUi();
+        SaveProfile();
+        _wizardStatus.Text = T("autoDeadzoneSaved");
+        Log(T("autoDeadzoneSaved"));
+        _autoDeadzone.Enabled = true;
     }
 
     private void CaptureCenterClicked(object? sender, EventArgs e)
@@ -865,6 +970,8 @@ public sealed class MainForm : Form
         _sensitivity.Value = (decimal)Math.Clamp(_calibration.Sensitivity * 100.0, 25, 200);
         _driftWarning.Value = (decimal)Math.Clamp(_calibration.DriftWarning * 100.0, 1, 50);
         _pollInterval.Value = Math.Clamp(_calibration.PollIntervalMs, 1, 16);
+        SetCurveSelection(_stickCurve, _calibration.StickResponseCurve);
+        SetCurveSelection(_triggerCurve, _calibration.TriggerResponseCurve);
     }
 
     private void ApplyCalibrationFromUi()
@@ -879,6 +986,8 @@ public sealed class MainForm : Form
             Sensitivity = (double)_sensitivity.Value / 100.0,
             DriftWarning = (double)_driftWarning.Value / 100.0,
             PollIntervalMs = (int)_pollInterval.Value,
+            StickResponseCurve = SelectedCurve(_stickCurve),
+            TriggerResponseCurve = SelectedCurve(_triggerCurve),
             AxisCalibrations = _calibration.AxisCalibrations?.ToDictionary(pair => pair.Key, pair => pair.Value.Clone()) ?? new()
         };
         _testView.Calibration = _calibration;
@@ -1442,6 +1551,7 @@ public sealed class MainForm : Form
 
     private void LoadProfileOrDefaults(bool forceFile = false)
     {
+        _profileRepository.EnsureDefaultProfile(DefaultProfilePath);
         var path = ProfilePath;
         if (_profileRepository.TryLoadProfile(path, out var profile, out var error) && profile?.Bindings.Count > 0)
         {
@@ -1461,19 +1571,32 @@ public sealed class MainForm : Form
         RefreshProfileSelector();
     }
 
-    private void RefreshDevices()
+    private void RefreshDevices(bool preserveSelection = false)
     {
         try
         {
+            var selectedGuid = _devices.SelectedIndex >= 0 && _devices.SelectedIndex < _deviceList.Count
+                ? _deviceList[_devices.SelectedIndex].InstanceGuid
+                : Guid.Empty;
             using var directInput = new DirectInput();
-            _deviceList = directInput.GetDevices(DeviceType.Gamepad, DeviceEnumerationFlags.AttachedOnly)
+            var fresh = directInput.GetDevices(DeviceType.Gamepad, DeviceEnumerationFlags.AttachedOnly)
                 .Concat(directInput.GetDevices(DeviceType.Joystick, DeviceEnumerationFlags.AttachedOnly))
                 .GroupBy(d => d.InstanceGuid).Select(g => g.First()).ToList();
 
+            if (_cts is not null && !_useAllConnectedDevices.Checked && selectedGuid != Guid.Empty &&
+                !fresh.Any(item => item.InstanceGuid == selectedGuid))
+            {
+                Log(T("deviceDisconnected"));
+                StopEmulation();
+            }
+
+            _deviceList = fresh;
             _devices.Items.Clear();
             foreach (var device in _deviceList) _devices.Items.Add(device.InstanceName);
-            if (_devices.Items.Count > 0) _devices.SelectedIndex = 0;
-            Log($"{T("devicesFound")}{_devices.Items.Count}");
+            var savedIndex = selectedGuid == Guid.Empty ? -1 : _deviceList.FindIndex(item => item.InstanceGuid == selectedGuid);
+            if (savedIndex >= 0) _devices.SelectedIndex = savedIndex;
+            else if (_devices.Items.Count > 0) _devices.SelectedIndex = 0;
+            if (!preserveSelection) Log($"{T("devicesFound")}{_devices.Items.Count}");
         }
         catch (Exception ex)
         {
@@ -1522,11 +1645,17 @@ public sealed class MainForm : Form
 
     private void StartEmulation()
     {
-        if (_devices.SelectedIndex < 0 || _devices.SelectedIndex >= _deviceList.Count)
+        var selectedGuids = _useAllConnectedDevices.Checked
+            ? _deviceList.Select(item => item.InstanceGuid).ToList()
+            : (_devices.SelectedIndex >= 0 && _devices.SelectedIndex < _deviceList.Count
+                ? new List<Guid> { _deviceList[_devices.SelectedIndex].InstanceGuid }
+                : new List<Guid>());
+        if (selectedGuids.Count == 0)
         {
             MessageBox.Show(T("selectJoystick"), "SavagePadEmu");
             return;
         }
+        if (_useAllConnectedDevices.Checked) Log(T("multiDeviceActive"));
         SaveProfile();
         _start.Enabled = false;
         _stop.Enabled = true;
@@ -1544,7 +1673,7 @@ public sealed class MainForm : Form
             _xbox.Connect();
             Log(T("virtualConnected"));
             _status.Text = T("emulating");
-            _ = Task.Run(() => PollLoop(_deviceList[_devices.SelectedIndex].InstanceGuid, _cts.Token));
+            _ = Task.Run(() => PollLoop(selectedGuids, _cts.Token));
         }
         catch (Exception ex)
         {
@@ -1554,38 +1683,27 @@ public sealed class MainForm : Form
         }
     }
 
-    private void PollLoop(Guid instanceGuid, CancellationToken token)
+    private void PollLoop(IReadOnlyList<Guid> instanceGuids, CancellationToken token)
     {
         Thread.CurrentThread.Priority = ThreadPriority.AboveNormal;
-        using var directInput = new DirectInput();
-        using var joystick = new Joystick(directInput, instanceGuid);
-        joystick.Properties.BufferSize = 128;
-        joystick.Acquire();
+        using var devices = new DirectInputDeviceSet(instanceGuids);
 
         ulong previousInput = ulong.MaxValue;
         var previousRevision = -1;
         while (!token.IsCancellationRequested)
         {
-            try
+            var readStarted = Stopwatch.GetTimestamp();
+            if (devices.TryRead(out var input))
             {
-                joystick.Poll();
-                var readStarted = Stopwatch.GetTimestamp();
-                var input = new InputSnapshot(joystick.GetCurrentState());
                 _diagnostics.RecordInputRead(Stopwatch.GetTimestamp() - readStarted);
                 var revision = Volatile.Read(ref _runtimeRevision);
 
-                // Skip redundant ViGEm reports. This lowers CPU use and bus traffic while preserving
-                // immediate updates whenever a physical input or mapping/calibration setting changes.
                 if (input.Fingerprint != previousInput || revision != previousRevision)
                 {
                     ApplyState(input);
                     previousInput = input.Fingerprint;
                     previousRevision = revision;
                 }
-            }
-            catch
-            {
-                try { joystick.Acquire(); } catch { }
             }
 
             var delay = Math.Clamp(_calibration.PollIntervalMs, 1, 16);
@@ -1667,6 +1785,7 @@ public sealed class MainForm : Form
             BeginInvoke(() => Log(message));
             return;
         }
+        _fileLogger.Write(message);
         _log.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
     }
 }

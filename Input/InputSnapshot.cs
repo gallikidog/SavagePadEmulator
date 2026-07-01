@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using SharpDX.DirectInput;
 
 namespace SavagePadEmu;
@@ -69,6 +70,52 @@ public readonly struct InputSnapshot
         7 => _slider1,
         _ => 32768
     };
+
+    public static InputSnapshot Merge(IReadOnlyList<InputSnapshot> snapshots)
+    {
+        if (snapshots.Count == 0) return default;
+        if (snapshots.Count == 1) return snapshots[0];
+
+        var buttons = new bool[128];
+        var axes = new int[8];
+        for (var i = 0; i < axes.Length; i++) axes[i] = 32768;
+        var pov = -1;
+
+        foreach (var snapshot in snapshots)
+        {
+            for (var button = 0; button < buttons.Length; button++)
+                buttons[button] |= snapshot.IsButtonPressed(button);
+
+            for (var axis = 0; axis < axes.Length; axis++)
+            {
+                var candidate = snapshot.Axis(axis);
+                if (Math.Abs(candidate - 32768) > Math.Abs(axes[axis] - 32768))
+                    axes[axis] = candidate;
+            }
+
+            if (pov < 0 && snapshot.Pov >= 0) pov = snapshot.Pov;
+        }
+
+        return new InputSnapshot(buttons, pov, axes);
+    }
+
+    private InputSnapshot(bool[] buttons, int pov, int[] axes)
+    {
+        _buttons = buttons;
+        _pov = pov;
+        _x = axes[0]; _y = axes[1]; _z = axes[2];
+        _rotationX = axes[3]; _rotationY = axes[4]; _rotationZ = axes[5];
+        _slider0 = axes[6]; _slider1 = axes[7];
+
+        unchecked
+        {
+            ulong hash = 1469598103934665603UL;
+            for (var i = 0; i < axes.Length; i++) hash = (hash ^ (uint)axes[i]) * 1099511628211UL;
+            hash = (hash ^ (uint)pov) * 1099511628211UL;
+            for (var i = 0; i < buttons.Length; i++) hash = (hash ^ (buttons[i] ? 1UL : 0UL)) * 1099511628211UL;
+            _fingerprint = hash;
+        }
+    }
 }
 
 public static class InputMapper
@@ -123,6 +170,7 @@ public static class InputMapper
         if (magnitude <= deadzone) return 0;
 
         var scaled = (magnitude - deadzone) / Math.Max(0.0001, 1.0 - deadzone);
+        scaled = ApplyCurve(scaled, calibration.StickResponseCurve);
         scaled = Math.Min(1.0, scaled * Math.Max(0.25, calibration.Sensitivity));
         if (calibration.AntiDeadzone > 0 && scaled > 0)
             scaled = Math.Min(1.0, calibration.AntiDeadzone + scaled * (1.0 - calibration.AntiDeadzone));
@@ -135,7 +183,20 @@ public static class InputMapper
         var normalized = Math.Clamp(value / 65535.0, 0.0, 1.0);
         if (normalized <= calibration.TriggerDeadzone) return 0;
         var scaled = (normalized - calibration.TriggerDeadzone) / Math.Max(0.0001, 1.0 - calibration.TriggerDeadzone);
+        scaled = ApplyCurve(scaled, calibration.TriggerResponseCurve);
         return (int)Math.Clamp(Math.Round(scaled * 255.0), 0, 255);
+    }
+
+    public static double ApplyCurve(double value, ResponseCurve curve)
+    {
+        value = Math.Clamp(value, 0.0, 1.0);
+        return curve switch
+        {
+            ResponseCurve.Precision => value * value,
+            ResponseCurve.Aggressive => Math.Sqrt(value),
+            ResponseCurve.Smooth => value * value * (3.0 - 2.0 * value),
+            _ => value
+        };
     }
 
     public static bool PovMatches(int pov, int direction)

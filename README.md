@@ -1,20 +1,15 @@
-# SavagePadEmulator v0.8.0
+# SavagePadEmulator v1.0.0
 
-## New in v0.8
-- Multiple JSON profiles.
-- Profile selector in **Calibration / Profiles**.
-- Create profiles from the app.
-- Associate a game `.exe` with the current profile.
-- Automatic profile switch when an associated game process is detected.
-- Existing `profile.json` remains supported as the default/legacy profile.
+Windows 11 DirectInput → virtual Xbox 360 controller mapper.
 
-## How to use game profiles
-1. Go to **Calibration / Profiles**.
-2. Create or select a profile and save it.
-3. Click **Associate game .exe...** and choose the game executable.
-4. Keep SavagePadEmulator open. Every 2 seconds it checks for associated game processes and loads the matching profile.
-
-Profiles created by the app are stored in the `Profiles` folder next to the executable. Associations and the last active profile are saved in `settings.json`.
+## New in v1.0
+- Built-in default profile based on `Defaults/profile.json`; first launch creates `%LOCALAPPDATA%\SavagePadEmu\Profiles\Default.json`.
+- Persistent diagnostic log: `%LOCALAPPDATA%\SavagePadEmu\SavagePadEmu.log`.
+- Response curves for sticks and triggers: **Linear**, **Precision**, **Aggressive**, **Smooth**.
+- **Auto-detect deadzone**: keep sticks centered for 1.5 seconds; it measures idle noise and saves recommended deadzones.
+- Hot-plug refresh: connected DirectInput devices are checked every 1.2 seconds. The UI updates without restarting; selected-device emulation stops safely if that device is unplugged.
+- Optional **Use all connected devices** mode: combines compatible DirectInput device inputs into one virtual Xbox controller. Buttons are merged; each analog axis uses the input furthest from center.
+- Input loop owns DirectInput sessions through `Input/DirectInputDeviceSet.cs`; persistent logging is handled by `Services/AppLogger.cs`.
 
 ## Build
 ```powershell
@@ -22,10 +17,7 @@ dotnet restore
 dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
-
-## Profile storage (v0.8.1)
-Profiles and settings are now stored in `%LOCALAPPDATA%\SavagePadEmu\Profiles` and `%LOCALAPPDATA%\SavagePadEmu\settings.json`, not next to the executable. Existing `profile.json`, `settings.json`, and `Profiles` data from the old executable folder are automatically copied on first start when possible. Use **Cargar perfil** to open any `.json` profile, or select one from **Calibración / Perfiles**.
-
-
-## v0.8.2
-- Fixed nullable-reference warning when loading a malformed or incomplete profile.
+## Notes
+- Install ViGEmBus before using virtual Xbox 360 emulation.
+- Profiles and settings are stored under `%LOCALAPPDATA%\SavagePadEmu`.
+- For auto deadzone, do not touch either stick during measurement.

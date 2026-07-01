@@ -43,6 +43,12 @@ public sealed class ProfileRepository
     public void SaveProfile(string path, Profile profile) => WriteAtomic(path, JsonSerializer.Serialize(profile, JsonOptions));
     public void SaveSettings(string path, AppSettings settings) => WriteAtomic(path, JsonSerializer.Serialize(settings, JsonOptions));
 
+    public void EnsureDefaultProfile(string path)
+    {
+        if (!File.Exists(path))
+            SaveProfile(path, DefaultProfileFactory.Create());
+    }
+
     private static void WriteAtomic(string path, string contents)
     {
         var folder = Path.GetDirectoryName(path);

@@ -12,6 +12,14 @@ public enum SourceKind
     Pov
 }
 
+public enum ResponseCurve
+{
+    Linear,
+    Precision,
+    Aggressive,
+    Smooth
+}
+
 public sealed class Binding
 {
     public string Target { get; set; } = "";
@@ -42,6 +50,9 @@ public sealed class CalibrationSettings
     public double Sensitivity { get; set; } = 1.00;
     public double DriftWarning { get; set; } = 0.12;
     public int PollIntervalMs { get; set; } = 1;
+    /// <summary>Response curve applied after deadzone and before anti-deadzone.</summary>
+    public ResponseCurve StickResponseCurve { get; set; } = ResponseCurve.Linear;
+    public ResponseCurve TriggerResponseCurve { get; set; } = ResponseCurve.Linear;
     // Values captured by the guided wizard for the mapped stick axes.
     public Dictionary<string, AxisCalibration> AxisCalibrations { get; set; } = new();
 
@@ -54,6 +65,8 @@ public sealed class CalibrationSettings
         Sensitivity = Sensitivity,
         DriftWarning = DriftWarning,
         PollIntervalMs = PollIntervalMs,
+        StickResponseCurve = StickResponseCurve,
+        TriggerResponseCurve = TriggerResponseCurve,
         AxisCalibrations = AxisCalibrations?.ToDictionary(pair => pair.Key, pair => pair.Value.Clone()) ?? new()
     };
 }
@@ -103,6 +116,58 @@ public sealed class VirtualTestState
     public int RightYRaw { get; set; } = 32768;
     public int LeftTriggerRaw { get; set; }
     public int RightTriggerRaw { get; set; }
+}
+
+
+public static class DefaultProfileFactory
+{
+    /// <summary>Built-in default layout supplied with SavagePadEmulator.</summary>
+    public static Profile Create() => new()
+    {
+        Name = "Default",
+        Calibration = new CalibrationSettings
+        {
+            LeftStickDeadzone = 0.08,
+            RightStickDeadzone = 0.08,
+            TriggerDeadzone = 0.05,
+            AntiDeadzone = 0,
+            Sensitivity = 1,
+            DriftWarning = 0.12,
+            PollIntervalMs = 1,
+            StickResponseCurve = ResponseCurve.Linear,
+            TriggerResponseCurve = ResponseCurve.Linear,
+            AxisCalibrations = new Dictionary<string, AxisCalibration>
+            {
+                ["LeftStickX"] = new() { Center = 32768, Minimum = 0, Maximum = 65535 },
+                ["LeftStickY"] = new() { Center = 32767, Minimum = 0, Maximum = 65535 },
+                ["RightStickX"] = new() { Center = 32768, Minimum = 0, Maximum = 65535 },
+                ["RightStickY"] = new() { Center = 32767, Minimum = 0, Maximum = 65535 }
+            }
+        },
+        Bindings = new List<Binding>
+        {
+            new() { Target = "A", Kind = SourceKind.Button, Index = 2 },
+            new() { Target = "B", Kind = SourceKind.Button, Index = 1 },
+            new() { Target = "X", Kind = SourceKind.Button, Index = 3 },
+            new() { Target = "Y", Kind = SourceKind.Button, Index = 0 },
+            new() { Target = "LB", Kind = SourceKind.Button, Index = 4 },
+            new() { Target = "RB", Kind = SourceKind.Button, Index = 5 },
+            new() { Target = "Back", Kind = SourceKind.Button, Index = 8 },
+            new() { Target = "Start", Kind = SourceKind.Button, Index = 9 },
+            new() { Target = "LS", Kind = SourceKind.Button, Index = 10 },
+            new() { Target = "RS", Kind = SourceKind.Button, Index = 11 },
+            new() { Target = "DPadUp", Kind = SourceKind.Pov, Index = 0 },
+            new() { Target = "DPadRight", Kind = SourceKind.Pov, Index = 1 },
+            new() { Target = "DPadDown", Kind = SourceKind.Pov, Index = 2 },
+            new() { Target = "DPadLeft", Kind = SourceKind.Pov, Index = 3 },
+            new() { Target = "LeftStickX", Kind = SourceKind.Axis, Index = 0 },
+            new() { Target = "LeftStickY", Kind = SourceKind.Axis, Index = 1, Invert = true },
+            new() { Target = "RightStickX", Kind = SourceKind.Axis, Index = 2 },
+            new() { Target = "RightStickY", Kind = SourceKind.Axis, Index = 5, Invert = true },
+            new() { Target = "LeftTrigger", Kind = SourceKind.Button, Index = 6 },
+            new() { Target = "RightTrigger", Kind = SourceKind.Button, Index = 7 }
+        }
+    };
 }
 
 public static class TargetCatalog
